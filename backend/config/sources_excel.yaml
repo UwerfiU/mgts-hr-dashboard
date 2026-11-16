@@ -1,0 +1,39 @@
+# Настройки импорта исторических Excel-файлов (критерий B3).
+# Каждый файл описывается отдельно: роль, лист, маппинг столбцов → внутренние вопросы,
+# правило определения цикла и ключ записи (для идемпотентности).
+#
+# TODO(WP7): заполнить по реальным файлам организаторов. Сейчас — шаблон
+# на синтетических данных (формат описан в tasks/WP3-excel-import.md).
+
+files:
+  - path: data/intern_history.xlsx        # пример; реальный путь задаётся при WP7
+    role: intern
+    sheet: Sheet1
+    cycle_column: month                  # столбец с циклом (1–6)
+    about_intern_column: trainee_name    # как определить, О КОМ отправка (имя/код → Intern.alias)
+    record_key:                          # правило ключа записи в источнике
+      type: file_row_hash                # file_row_hash | stable_id
+      columns: [trainee_name, month]     # для file_row_hash: столбцы, участвующие в ключе
+    fields:                              # «столбец Excel → внутренний вопрос»
+      skill_growth: score_skill
+      task_clarity: score_tasks
+      mentor_support: score_mentor
+      motivation: score_motivation
+      satisfaction: score_overall
+      comment: comment_text              # текстовое поле (type: text)
+
+  - path: data/mentor_history.xlsx
+    role: mentor
+    sheet: Sheet1
+    cycle_column: month
+    about_intern_column: intern_name     # TODO(WP7): подтвердить, что связь надёжна
+    record_key:
+      type: file_row_hash
+      columns: [intern_name, month]
+    fields:
+      performance: score_performance
+      proactivity: score_proactivity
+      skill_growth_mentor: score_skill
+      communication: score_communication
+      readiness: score_readiness
+      comment: comment_text

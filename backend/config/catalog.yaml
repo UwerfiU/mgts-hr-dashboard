@@ -1,0 +1,124 @@
+# Каталог анкет, вопросов, метрик и пар сравнения.
+# Это ЕДИНСТВЕННОЕ место, где задаются вопросы: добавление/переименование вопроса
+# не требует изменения таблиц БД и схемы API (критерий B1).
+#
+# TODO(до WP5): подтвердить реальные вопросы/шкалы по материалам организаторов.
+# Сейчас — предположительная схема из начального скелета.
+
+questionnaires:
+  - id: intern_v1
+    role: intern          # intern | mentor
+    version: 1
+  - id: mentor_v1
+    role: mentor
+    version: 1
+
+questions:
+  # --- Анкета стажёра ---
+  - key: skill_growth
+    questionnaire: intern_v1
+    label: Рост профессиональных навыков
+    type: score
+    scale_min: 1
+    scale_max: 5
+  - key: task_clarity
+    questionnaire: intern_v1
+    label: Понятность задач и ожиданий
+    type: score
+    scale_min: 1
+    scale_max: 5
+  - key: mentor_support
+    questionnaire: intern_v1
+    label: Поддержка наставника
+    type: score
+    scale_min: 1
+    scale_max: 5
+  - key: motivation
+    questionnaire: intern_v1
+    label: Мотивация и вовлечённость
+    type: score
+    scale_min: 1
+    scale_max: 5
+  - key: satisfaction
+    questionnaire: intern_v1
+    label: Общее удовлетворение стажировкой
+    type: score
+    scale_min: 1
+    scale_max: 5
+
+  # --- Анкета наставника ---
+  - key: performance
+    questionnaire: mentor_v1
+    label: Качество выполняемой работы
+    type: score
+    scale_min: 1
+    scale_max: 5
+  - key: proactivity
+    questionnaire: mentor_v1
+    label: Инициативность и самостоятельность
+    type: score
+    scale_min: 1
+    scale_max: 5
+  - key: skill_growth_mentor
+    questionnaire: mentor_v1
+    label: Рост профессиональных навыков (оценка наставника)
+    type: score
+    scale_min: 1
+    scale_max: 5
+  - key: communication
+    questionnaire: mentor_v1
+    label: Коммуникация и обратная связь
+    type: score
+    scale_min: 1
+    scale_max: 5
+  - key: readiness
+    questionnaire: mentor_v1
+    label: Готовность к должности по итогам программы
+    type: score
+    scale_min: 1
+    scale_max: 5
+
+# Метрики для /api/v1/metrics: каждая метрика ссылается на вопросы.
+# metricId — то, что использует фронтенд.
+metrics:
+  - id: skill_growth
+    role: intern
+    question_keys: [skill_growth]
+  - id: task_clarity
+    role: intern
+    question_keys: [task_clarity]
+  - id: mentor_support
+    role: intern
+    question_keys: [mentor_support]
+  - id: motivation
+    role: intern
+    question_keys: [motivation]
+  - id: satisfaction
+    role: intern
+    question_keys: [satisfaction]
+  - id: performance
+    role: mentor
+    question_keys: [performance]
+  - id: proactivity
+    role: mentor
+    question_keys: [proactivity]
+  - id: skill_growth_mentor
+    role: mentor
+    question_keys: [skill_growth_mentor]
+  - id: communication
+    role: mentor
+    question_keys: [communication]
+  - id: readiness
+    role: mentor
+    question_keys: [readiness]
+
+# Пары сравнения для блока comparison в /api/v1/metrics.
+# Сравниваются ТОЛЬКО явно настроенные пары (вопросы об одном аспекте,
+# согласованная шкала). direction — как считается разность.
+# TODO(до WP5): подтвердить сопоставимость по реальным анкетам.
+comparison_pairs:
+  - id: skill_growth_gap
+    intern_question: skill_growth
+    mentor_question: skill_growth_mentor
+    direction: intern_minus_mentor
+    rule: paired_mean   # средняя разность внутри пар «стажёр × цикл»

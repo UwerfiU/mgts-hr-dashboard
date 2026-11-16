@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+
+# Secrets / local config
+.env
+
+# Local databases (датасеты в CSV оставляем в репозитории)
+backend/data/*.db
+backend/data/*.sqlite3
