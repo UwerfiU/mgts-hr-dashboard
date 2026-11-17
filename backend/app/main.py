@@ -2,8 +2,8 @@
 
 Состояние:
   * WP1 — каталог из config/catalog.yaml при старте;
-  * WP4 — poller Google Forms (режим real + настроенный OAuth); в demo не стартует.
-Дальше: WP5 — маршруты /api/v1/{meta,metrics,feedback}.
+  * WP4 — poller Google Forms (режим real + настроенный OAuth); в demo не стартует;
+  * WP5 — маршруты /api/v1/{meta,metrics,feedback}.
 """
 import logging
 from contextlib import asynccontextmanager
@@ -37,8 +37,21 @@ def _build_forms_poller():
     from .sources.forms_poller.poller import FormsPoller
 
     cfg_path = Path(settings.catalog_path).parent / "sources_forms.yaml"
+    if not cfg_path.exists():
+        logger.info("Forms poller отключён: конфиг %s не найден", cfg_path)
+        return None
     cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
-    forms = [f for f in cfg.get("forms", []) if f.get("form_id", "").startswith("TODO") is False]
+    forms = []
+    for entry in cfg.get("forms", []):
+        form_id = entry.get("form_id")
+        # Пустой/None/TODO form_id раньше ронял приложение на .startswith()
+        if not isinstance(form_id, str) or not form_id.strip() or form_id.startswith("TODO"):
+            continue
+        missing = [k for k in ("role", "questionnaire", "cycle_field") if not entry.get(k)]
+        if missing:
+            logger.warning("Forms poller: форма %s пропущена — не заданы %s", form_id, ", ".join(missing))
+            continue
+        forms.append(entry)
     if not forms:
         logger.info("Forms poller отключён: в %s нет заполненных form_id", cfg_path)
         return None

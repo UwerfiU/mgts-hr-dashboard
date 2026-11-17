@@ -24,6 +24,8 @@ from ..db.models import ComparisonPair, Metric, Question, Questionnaire
 
 ROLES = ("intern", "mentor")
 QUESTION_TYPES = ("score", "text")
+DIRECTIONS = ("intern_minus_mentor", "mentor_minus_intern")
+RULES = ("paired_mean",)
 
 
 class CatalogConfigError(ValueError):
@@ -66,6 +68,8 @@ def validate(data: dict) -> None:
             problems.append(f"{path}.role: '{role}' (допустимо: {', '.join(ROLES)})")
         if not isinstance(version, int):
             problems.append(f"{path}.version: ожидается целое число, получено: {version!r}")
+        elif version < 1:
+            problems.append(f"{path}.version: должно быть > 0, получено {version}")
 
     questions = data.get("questions") or []
     key_owner: dict[str, str] = {}
@@ -93,6 +97,13 @@ def validate(data: dict) -> None:
             elif lo > hi:
                 problems.append(f"{path}: scale_min={lo} больше scale_max={hi}")
 
+    intern_qids = {q["id"] for q in questionnaires if isinstance(q, dict) and q.get("role") == "intern"}
+    mentor_qids = {q["id"] for q in questionnaires if isinstance(q, dict) and q.get("role") == "mentor"}
+    key_qid: dict[str, str] = {}
+    for q in questions:
+        if isinstance(q, dict) and isinstance(q.get("key"), str):
+            key_qid[q["key"]] = q.get("questionnaire")
+
     metrics = data.get("metrics") or []
     mid_seen: set[str] = set()
     for i, m in enumerate(metrics):
@@ -106,16 +117,16 @@ def validate(data: dict) -> None:
             mid_seen.add(mid)
         if m.get("role") not in ROLES:
             problems.append(f"{path}.role: '{m.get('role')}' (допустимо: {', '.join(ROLES)})")
+        metric_role = m.get("role")
+        role_qids = intern_qids if metric_role == "intern" else mentor_qids
         for k in m.get("question_keys") or []:
             if k not in key_owner:
                 problems.append(f"{path}.question_keys: неизвестный вопрос '{k}'")
-
-    intern_qids = {q["id"] for q in questionnaires if isinstance(q, dict) and q.get("role") == "intern"}
-    mentor_qids = {q["id"] for q in questionnaires if isinstance(q, dict) and q.get("role") == "mentor"}
-    key_qid: dict[str, str] = {}
-    for q in questions:
-        if isinstance(q, dict) and isinstance(q.get("key"), str):
-            key_qid[q["key"]] = q.get("questionnaire")
+            elif key_qid.get(k) not in role_qids:
+                problems.append(
+                    f"{path}.question_keys: вопрос '{k}' принадлежит анкете "
+                    f"'{key_qid.get(k)}', а метрика объявлена для роли '{metric_role}'"
+                )
 
     pairs = data.get("comparison_pairs") or []
     pid_seen: set[str] = set()
@@ -133,6 +144,12 @@ def validate(data: dict) -> None:
             problems.append(f"{path}.intern_question: '{ik}' не является вопросом анкеты стажёра")
         if key_qid.get(mk) not in mentor_qids:
             problems.append(f"{path}.mentor_question: '{mk}' не является вопросом анкеты наставника")
+        if p.get("direction", "intern_minus_mentor") not in DIRECTIONS:
+            problems.append(
+                f"{path}.direction: '{p.get('direction')}' (допустимо: {', '.join(DIRECTIONS)})"
+            )
+        if p.get("rule", "paired_mean") not in RULES:
+            problems.append(f"{path}.rule: '{p.get('rule')}' (допустимо: {', '.join(RULES)})")
 
     if problems:
         _fail(problems)

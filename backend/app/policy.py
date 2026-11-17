@@ -66,7 +66,8 @@ def expected_per_cycle() -> dict[str, int | None] | None:
     out = {}
     for role in ("intern", "mentor"):
         v = value.get(role)
-        out[role] = int(v) if isinstance(v, int) and v > 0 else None
+        # bool — подкласс int: true в YAML не должен превращаться в 1
+        out[role] = int(v) if isinstance(v, int) and not isinstance(v, bool) and v > 0 else None
     return out
 
 

@@ -15,18 +15,29 @@
 ## Быстрый старт
 
 Проект запускается **без интернета и внешних ключей** — в режиме `demo` на синтетических данных.
+Требуется **Python 3.11+** (используется `datetime.fromisoformat` с суффиксом `Z`).
 
 ```bash
 cd backend
 python -m venv .venv
-.venv/Scripts/pip install -r requirements.txt     # Windows; Linux/macOS: .venv/bin/pip
-cp .env.example .env                               # по умолчанию — режим demo
+.venv/bin/pip install -r requirements.txt        # Windows: .venv\Scripts\pip
+# для тестов: .venv/bin/pip install -r requirements-dev.txt
+cp .env.example .env                             # по умолчанию — режим demo
 
 # 1) сгенерировать синтетическую БД (5 стажёров × 5 наставников, циклы 1–6):
-.venv/Scripts/python -m app.scripts.seed_demo      # повторный запуск не создаёт дублей; --reset — очистить демо-данные
+.venv/bin/python -m app.scripts.seed_demo        # повторный запуск не создаёт дублей; --reset — очистить демо-данные
 
 # 2) поднять сервис:
-.venv/Scripts/python -m uvicorn app.main:app --port 8000
+.venv/bin/python -m uvicorn app.main:app --port 8000
+```
+
+Windows: замените `.venv/bin/python` на `.venv\Scripts\python`, `.venv/bin/pip` на `.venv\Scripts\pip`.
+
+Импорт исторических Excel (из `backend/`, пути в конфиге — относительно `backend/`):
+
+```bash
+.venv/bin/python -m app.sources.excel_importer --config config/sources_excel.yaml --dry-run
+.venv/bin/python -m app.sources.excel_importer --config config/sources_excel.yaml
 ```
 
 Проверка:
@@ -37,7 +48,7 @@ cp .env.example .env                               # по умолчанию —
 - `GET /api/v1/metrics?metricId=motivation` — охват/динамика/распределение/сравнение;
 - `GET /api/v1/feedback` — комментарии (в demo показаны).
 
-Тесты: `.venv/Scripts/python -m pytest tests/ -q`.
+Тесты: `.venv/bin/python -m pytest tests/ -q` (Windows: `.venv\Scripts\python -m pytest tests/ -q`).
 
 ### Что в демо-«сюжете» (для проверки глазами)
 
@@ -66,7 +77,7 @@ cp .env.example .env                               # по умолчанию —
   - история импортируется CLI из двух Excel (см. `config/sources_excel.yaml`, бриф [WP3](tasks/WP3-excel-import.md));
   - новые ответы приходят опросом Google Forms (polling, без публичного webhook) — подключение по
     [чеклисту WP4](tasks/WP4-forms-connector.md): OAuth-секреты кладутся в `backend/secrets/`
-    (вне репозитория), разовая настройка: `.venv/Scripts/python -m app.sources.forms_poller.setup_oauth`,
+    (вне репозитория), разовая настройка: `.venv/bin/python -m app.sources.forms_poller.setup_oauth`,
     `formId` и маппинг вопросов — в `config/sources_forms.yaml`.
 
 Сбой внешней синхронизации не стирает историю: время последней успешной синхронизации и ошибка
@@ -83,7 +94,7 @@ cp .env.example .env                               # по умолчанию —
 | `backend/.env.example` | переменные окружения (`MGTS_*`): режим, БД, OAuth-путь, LLM (этап 2) |
 
 Секреты (OAuth Google, LLM-ключи) и реальные данные хранятся **вне репозитория**
-(`.gitignore` покрывает `.env`, `backend/secrets/`, `backend/data/*.db`).
+(`.gitignore` покрывает `.env`, `backend/secrets/`, `backend/data/*.db`, `backend/data/*.xlsx`, `backend/data/*.xls`).
 
 ## Структура
 
@@ -105,7 +116,7 @@ backend/
 │   └── scripts/seed_demo.py # генерация синтетической БД
 ├── config/                  # YAML-конфиги (см. таблицу выше)
 ├── fixtures/                # статические примеры ответов для фронтенда
-├── tests/                   # pytest: 50+ тестов по всем WP
+├── tests/                   # pytest: модель, каталог, нормализация, Excel, формы, API, seed, сигналы
 └── data/                    # локальная БД (вне git)
 ```
 

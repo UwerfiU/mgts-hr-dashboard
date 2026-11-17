@@ -6,6 +6,8 @@
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import threading
 from datetime import datetime
@@ -20,17 +22,6 @@ from .sync_state import set_sync_state
 logger = logging.getLogger("mgts.forms")
 
 
-def _question_id(question: dict) -> str | None:
-    """Стабильный ID вопроса из ответа Forms API (camelCase-поля)."""
-    for kind in ("textQuestion", "multipleChoiceQuestion", "gridQuestion", "imageMultipleChoiceQuestion"):
-        block = question.get(kind)
-        if isinstance(block, dict):
-            qid = block.get(f"{kind}Id")
-            if qid:
-                return qid
-    return question.get("title") or None
-
-
 def _parse_time(value: str | None) -> datetime | None:
     if not value:
         return None
@@ -38,6 +29,49 @@ def _parse_time(value: str | None) -> datetime | None:
         return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     except ValueError:
         return None
+
+
+def _answer_value(answer: dict) -> str:
+    """Текст ответа Forms API: answers[] внутри textAnswers (может быть несколько)."""
+    block = answer.get("textAnswers") or {}
+    values = [
+        str(item.get("value", ""))
+        for item in (block.get("answers") or [])
+        if isinstance(item, dict)
+    ]
+    return "; ".join(v for v in values if v.strip())
+
+
+def _iter_answers(resp: dict):
+    """(questionId, value) из ответа Forms API.
+
+    Реальный формат: `answers` — объект {questionId: Answer}. Дополнительно
+    поддерживается список (старый мок/иная обёртка), чтобы не терять данные.
+    """
+    answers = resp.get("answers")
+    if isinstance(answers, dict):
+        for qid, answer in answers.items():
+            if not isinstance(answer, dict):
+                continue
+            yield str(answer.get("questionId") or qid), _answer_value(answer)
+    elif isinstance(answers, list):
+        for answer in answers:
+            if not isinstance(answer, dict):
+                continue
+            qid = answer.get("questionId") or (answer.get("question") or {}).get("questionId")
+            if qid:
+                yield str(qid), _answer_value(answer)
+
+
+def _fallback_response_id(resp: dict) -> str:
+    """Стабильный id, если Forms API не вернул responseId: хеш содержимого ответа."""
+    basis = {
+        "createTime": resp.get("createTime"),
+        "lastSubmittedTime": resp.get("lastSubmittedTime"),
+        "answers": resp.get("answers"),
+    }
+    blob = json.dumps(basis, sort_keys=True, ensure_ascii=False, default=str)
+    return "sha1-" + hashlib.sha1(blob.encode("utf-8")).hexdigest()[:16]
 
 
 def response_to_raw(entry: dict, resp: dict) -> RawRecord:
@@ -48,17 +82,17 @@ def response_to_raw(entry: dict, resp: dict) -> RawRecord:
       * "about_intern"  — значение вопроса «о ком» (entry["about_intern_field"]).
     """
     form_id = entry["form_id"]
-    resp_id = str(resp.get("name", "")).rsplit("/", 1)[-1] or "unknown"
-    qmap: dict[str, str] = entry.get("question_map") or {}
+    resp_id = str(resp.get("responseId") or "").strip()
+    if not resp_id:
+        # Запасной вариант: name вида forms/{formId}/responses/{id}, иначе хеш.
+        name = str(resp.get("name") or "")
+        resp_id = name.rsplit("/", 1)[-1] if "/" in name else ""
+    if not resp_id:
+        resp_id = _fallback_response_id(resp)
 
+    qmap: dict[str, str] = entry.get("question_map") or {}
     payload: dict = {}
-    for ans in resp.get("answers", []):
-        question = ans.get("question") or {}
-        qid = _question_id(question)
-        if not qid:
-            continue
-        values = [sa.get("answer", "") for sa in ans.get("selectedAnswers", [])]
-        value = "; ".join(v for v in values if v is not None and str(v).strip() != "")
+    for qid, value in _iter_answers(resp):
         if qid == entry.get("cycle_field"):
             payload["cycle"] = value
         elif qid == entry.get("about_intern_field"):
@@ -66,11 +100,14 @@ def response_to_raw(entry: dict, resp: dict) -> RawRecord:
         elif qid in qmap:
             payload[qmap[qid]] = value
 
+    submitted_field = entry.get("submitted_at_field") or "createTime"
+    submitted_at = _parse_time(resp.get(submitted_field)) or _parse_time(resp.get("createTime"))
+
     return RawRecord(
         source="form",
         source_key=f"{form_id}:{resp_id}",  # устойчивый ключ — основа идемпотентности
         payload=payload,
-        submitted_at=_parse_time(resp.get("createTime")),
+        submitted_at=submitted_at,
     )
 
 
@@ -106,9 +143,16 @@ class FormsPoller:
         db = self.db_factory()
         try:
             for entry in self.entries:
-                connector = f"form:{entry['form_id']}"
+                form_id = entry.get("form_id")
+                connector = f"form:{form_id}"
+                if not form_id:
+                    msg = "form_id не задан в конфиге sources_forms.yaml"
+                    set_sync_state(db, connector, error=msg)
+                    results[connector] = {"ok": False, "error": msg}
+                    logger.error("sync %s: %s", connector, msg)
+                    continue
                 try:
-                    records = [response_to_raw(entry, r) for r in self.client.iter_responses(entry["form_id"])]
+                    records = [response_to_raw(entry, r) for r in self.client.iter_responses(form_id)]
                     report: NormalizationReport = normalize_and_store(db, records, spec_from_form_entry(entry))
                     from ...db.models import utcnow
 

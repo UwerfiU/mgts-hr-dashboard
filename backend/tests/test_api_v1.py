@@ -11,7 +11,7 @@ import pytest
 from sqlalchemy import select
 
 from app.config import settings
-from app.db.models import Intern, Mentor, Submission
+from app.db.models import Intern, Mentor
 from app.normalization.core import normalize_and_store
 from app.normalization.spec import SourceSpec
 from app.sources.base import RawRecord
@@ -48,10 +48,10 @@ def _seed(db):
     normalize_and_store(db, mentor_records, MENTOR_SPEC)
 
     ids = {
-        "anna": db.scalar(select(Intern.id).where(Intern.alias == "API Анна")),
-        "boris": db.scalar(select(Intern.id).where(Intern.alias == "API Борис")),
-        "mentor1": db.scalar(select(Mentor.id).where(Mentor.alias == "API Наставник")),
-        "mentor2": db.scalar(select(Mentor.id).where(Mentor.alias == "API Второй")),
+        "anna": db.scalar(select(Intern.opaque_id).where(Intern.alias == "API Анна")),
+        "boris": db.scalar(select(Intern.opaque_id).where(Intern.alias == "API Борис")),
+        "mentor1": db.scalar(select(Mentor.opaque_id).where(Mentor.alias == "API Наставник")),
+        "mentor2": db.scalar(select(Mentor.opaque_id).where(Mentor.alias == "API Второй")),
     }
     assert all(ids.values()), "сид-данные не созданы"
     return ids
@@ -79,6 +79,17 @@ def allow_texts(tmp_path, monkeypatch):
     p = tmp_path / "permissions.yaml"
     p.write_text(
         "personal_slices_allowed: false\nnumeric_history_allowed: false\ntext_display_allowed: true\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(settings, "permissions_path", str(p))
+
+
+@pytest.fixture()
+def allow_personal_texts(tmp_path, monkeypatch):
+    """Личная связь и тексты разрешены, числовая история — нет (флаги независимы)."""
+    p = tmp_path / "permissions.yaml"
+    p.write_text(
+        "personal_slices_allowed: true\nnumeric_history_allowed: false\ntext_display_allowed: true\n",
         encoding="utf-8",
     )
     monkeypatch.setattr(settings, "permissions_path", str(p))
@@ -126,10 +137,44 @@ def test_metrics_bad_range(client):
     assert r.json()["code"] == "BAD_MONTH_RANGE"
 
 
+def test_meta_aliases_include_opaque_ids(client, seeded, allow_numeric):
+    """aliases отдаются парами {id, alias}; id — именно opaque_id (его принимают фильтры)."""
+    ids = _seed(seeded)
+    body = client.get("/api/v1/meta").json()
+    assert body["aliases"]["allowed"] is True
+    anna = next(a for a in body["aliases"]["interns"] if a["alias"] == "API Анна")
+    assert anna == {"id": ids["anna"], "alias": "API Анна"}
+    assert all(set(a) == {"id", "alias"} for a in body["aliases"]["mentors"])
+
+
 def test_metrics_personal_forbidden_by_default(client, seeded):
     r = client.get("/api/v1/metrics", params={"metricId": "skill_growth", "internId": "1"})
     assert r.status_code == 403
     assert r.json()["code"] == "PERSONAL_SLICE_NOT_ALLOWED"
+
+
+def test_metrics_both_filters_rejected(client, seeded, allow_numeric):
+    ids = _seed(seeded)
+    r = client.get("/api/v1/metrics", params={
+        "metricId": "skill_growth", "internId": ids["anna"], "mentorId": ids["mentor1"],
+    })
+    assert r.status_code == 422
+    assert r.json()["code"] == "ONE_FILTER_ONLY"
+
+
+def test_metrics_unknown_person(client, seeded, allow_numeric):
+    r = client.get("/api/v1/metrics", params={"metricId": "skill_growth", "internId": "NO-SUCH-ID"})
+    assert r.status_code == 404
+    assert r.json()["code"] == "PERSON_NOT_FOUND"
+
+
+def test_metrics_pk_is_not_opaque_id(client, seeded, allow_numeric):
+    """Внутренний PK не должен приниматься как идентификатор участника."""
+    anna_pk = seeded.scalar(select(Intern.id).where(Intern.alias == "API Анна"))
+    r = client.get("/api/v1/metrics", params={"metricId": "skill_growth", "internId": str(anna_pk)})
+    assert r.status_code == 404
+    assert r.json()["code"] == "PERSON_NOT_FOUND"
+
 
 
 def test_metrics_personal_slice(client, seeded, allow_numeric):
@@ -198,6 +243,21 @@ def test_feedback_allowed(client, seeded, allow_texts):
     # пустой срез — 200 + [] (различается с запретом)
     r3 = client.get("/api/v1/feedback", params={"fromMonth": 6, "toMonth": 6})
     assert r3.status_code == 200 and r3.json() == {"texts": []}
+
+
+def test_feedback_unknown_person(client, seeded, allow_personal_texts):
+    r = client.get("/api/v1/feedback", params={"internId": "NO-SUCH-ID"})
+    assert r.status_code == 404
+    assert r.json()["code"] == "PERSON_NOT_FOUND"
+
+
+def test_feedback_personal_filter_does_not_require_numeric(client, seeded, allow_personal_texts):
+    """Тексты и числовая история — независимые флаги: numeric_history_allowed=false не мешает."""
+    ids = _seed(seeded)
+    r = client.get("/api/v1/feedback", params={"internId": ids["anna"], "fromMonth": 1, "toMonth": 3})
+    assert r.status_code == 200, r.text
+    texts = r.json()["texts"]
+    assert [t["text"] for t in texts] == ["API тестовый комментарий"]
 
 
 # --- фикстуры контракта --------------------------------------------------------

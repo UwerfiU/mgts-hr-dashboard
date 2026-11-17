@@ -1,5 +1,6 @@
 """GET /api/v1/metrics — охват, динамика, распределение, сравнение (контракт BACKEND.md)."""
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ... import policy
@@ -11,14 +12,23 @@ from ...catalog import access
 from ...config import settings
 from ...db.database import get_db
 from ...db.models import Intern, Mentor
-from .codes import CODE_BAD_MONTH_RANGE, CODE_METRIC_NOT_FOUND, bad_request, forbidden, not_found
+from .codes import (
+    CODE_BAD_MONTH_RANGE,
+    CODE_METRIC_NOT_FOUND,
+    CODE_ONE_FILTER_ONLY,
+    CODE_PERSON_NOT_FOUND,
+    bad_request,
+    forbidden,
+    not_found,
+)
 
 router = APIRouter(prefix="/api/v1", tags=["v1"])
 
 
 def _resolve_person(db: Session, kind: str, opaque_id: str) -> int | None:
+    """Непрозрачный код участника → внутренний PK (None, если не найден)."""
     model = Intern if kind == "intern" else Mentor
-    row = db.get(model, int(opaque_id)) if str(opaque_id).isdigit() else None
+    row = db.scalar(select(model).where(model.opaque_id == str(opaque_id)))
     return row.id if row else None
 
 
@@ -39,6 +49,9 @@ def metrics(
         return not_found(CODE_METRIC_NOT_FOUND)
 
     # Персональные срезы — только при подтверждённой связи и разрешении политикой
+    if internId is not None and mentorId is not None:
+        return bad_request(CODE_ONE_FILTER_ONLY)
+
     intern_id = mentor_id = None
     if internId or mentorId:
         if not (policy.personal_slices_allowed() and policy.numeric_history_allowed()):
@@ -46,11 +59,11 @@ def metrics(
         if internId:
             intern_id = _resolve_person(db, "intern", internId)
             if intern_id is None:
-                return not_found(CODE_METRIC_NOT_FOUND)
+                return not_found(CODE_PERSON_NOT_FOUND)
         else:
             mentor_id = _resolve_person(db, "mentor", mentorId)
             if mentor_id is None:
-                return not_found(CODE_METRIC_NOT_FOUND)
+                return not_found(CODE_PERSON_NOT_FOUND)
 
     result: dict = {
         "dataMode": settings.data_mode,

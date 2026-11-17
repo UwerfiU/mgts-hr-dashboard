@@ -13,16 +13,20 @@ from app.sources.forms_poller.mock import MockFormsClient
 from app.sources.forms_poller.poller import FormsPoller, response_to_raw, spec_from_form_entry
 
 
-def _resp(form_id: str, rid: str, answers: list[tuple[str, str]], created="2026-05-01T10:00:00Z") -> dict:
-    """Ответ в структуре Forms API (текстовые вопросы; ID вопроса — textQuestionId)."""
+def _resp(form_id: str, rid: str, answers: list[tuple[str, str]],
+          created="2026-05-01T10:00:00Z") -> dict:
+    """Ответ в реальной структуре Forms API: answers — объект {questionId: Answer}."""
     return {
-        "name": f"forms/{form_id}/responses/{rid}",
+        "formId": form_id,
+        "responseId": rid,
         "createTime": created,
-        "answers": [
-            {"question": {"textQuestion": {"textQuestionId": qid}, "title": qid},
-             "selectedAnswers": [{"answer": value}]}
+        "answers": {
+            qid: {
+                "questionId": qid,
+                "textAnswers": {"answers": [{"value": value}]},
+            }
             for qid, value in answers
-        ],
+        },
     }
 
 
@@ -155,6 +159,56 @@ def test_spec_and_parse():
     assert raw.payload["about_intern"] == "Анна"
     assert raw.payload["skill_growth"] == "5"
     assert raw.payload["comment_intern"] == "Отлично"
+
+
+def test_response_to_raw_real_shape_and_fallback_id():
+    """Реальный Forms API: responseId + answers как объект + textAnswers.answers[].value."""
+    entry = _entry("F_REAL")
+    resp = {
+        "formId": "F_REAL",
+        "responseId": "RID",
+        "createTime": "2026-05-01T10:00:00Z",
+        "answers": {
+            "Q_CYCLE": {"questionId": "Q_CYCLE", "textAnswers": {"answers": [{"value": "2"}]}},
+            "Q_WHO": {"questionId": "Q_WHO", "textAnswers": {"answers": [{"value": "Анна"}]}},
+            "Q_SKILL": {"questionId": "Q_SKILL", "textAnswers": {"answers": [{"value": "4"}]}},
+            "Q_COMMENT": {"questionId": "Q_COMMENT", "textAnswers": {"answers": [{"value": "Хорошо"}]}},
+        },
+    }
+    raw = response_to_raw(entry, resp)
+    assert raw.source_key == "F_REAL:RID"
+    assert raw.payload == {
+        "cycle": "2", "about_intern": "Анна",
+        "skill_growth": "4", "comment_intern": "Хорошо",
+    }
+    assert raw.submitted_at is not None
+
+    # Нет responseId — стабильный запасной id (повторный разбор даёт тот же ключ).
+    resp_wo_id = dict(resp)
+    resp_wo_id.pop("responseId")
+    k1 = response_to_raw(entry, resp_wo_id).source_key
+    k2 = response_to_raw(entry, resp_wo_id).source_key
+    assert k1 == k2 and k1.startswith("F_REAL:sha1-")
+
+
+def test_submitted_at_field_last_submitted():
+    entry = {**_entry("F_TIME"), "submitted_at_field": "lastSubmittedTime"}
+    resp = _resp("F_TIME", "R1", [("Q_CYCLE", "1"), ("Q_SKILL", "4")],
+                 created="2026-05-01T10:00:00Z")
+    resp["lastSubmittedTime"] = "2026-05-02T11:00:00Z"
+    raw = response_to_raw(entry, resp)
+    assert raw.submitted_at is not None and raw.submitted_at.day == 2
+
+
+def test_missing_form_id_does_not_crash(catalog_db):
+    poller = FormsPoller(
+        client=MockFormsClient({}),
+        entries=[{"form_id": None, "role": "intern", "questionnaire": "intern_v1"}],
+        interval_seconds=1,
+    )
+    result = poller.sync_once()
+    assert result["form:None"]["ok"] is False
+    assert "form_id" in result["form:None"]["error"]
 
 
 def test_poller_background_thread(catalog_db):

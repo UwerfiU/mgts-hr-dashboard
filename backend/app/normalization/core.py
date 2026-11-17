@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -73,6 +74,11 @@ def normalize_record(
     qn = db.scalar(select(Questionnaire).where(Questionnaire.qid == spec.questionnaire))
     if qn is None:
         return None, [f"анкета '{spec.questionnaire}' не найдена в каталоге"]
+    if spec.role != qn.role:
+        return None, [
+            f"роль источника '{spec.role}' не совпадает с ролью анкеты "
+            f"'{spec.questionnaire}' ({qn.role})"
+        ]
 
     cycle = _to_cycle_int(payload.get(spec.cycle_field))
     if cycle is None or not 1 <= cycle <= settings.program_months:
@@ -99,12 +105,22 @@ def normalize_record(
             except (TypeError, ValueError):
                 reasons.append(f"оценка по вопросу '{qkey}' не число: {value!r}")
                 continue
+            if not math.isfinite(score):
+                reasons.append(f"оценка по вопросу '{qkey}' не конечное число: {value!r}")
+                continue
             lo, hi = question.scale_min, question.scale_max
             if (lo is not None and score < lo) or (hi is not None and score > hi):
-                reasons.append(f"оценка {score:g} по вопросу '{qkey}' вне шкалы {lo:g}–{hi:g}")
+                lo_txt = f"{lo:g}" if lo is not None else "?"
+                hi_txt = f"{hi:g}" if hi is not None else "?"
+                reasons.append(f"оценка {score:g} по вопросу '{qkey}' вне шкалы {lo_txt}–{hi_txt}")
                 continue
             answers[qkey] = AnswerValue(score=score)
         else:  # text
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                reasons.append(
+                    f"по вопросу '{qkey}' ожидался текст, получено число: {value!r}"
+                )
+                continue
             answers[qkey] = AnswerValue(text=str(value).strip())
 
     if reasons:
@@ -212,6 +228,7 @@ def normalize_batch(
     """
     report = NormalizationReport()
     ok_records: list[NormalizedRecord] = []
+    seen: set[str] = set()
     for raw in records:
         try:
             rec, reasons = normalize_record(db, raw, spec)
@@ -223,19 +240,25 @@ def normalize_batch(
             for reason in reasons:
                 report.skip(raw.source_key, reason)
             continue
+        if rec.source_key in seen:
+            # Две строки источника с одним ключом (например, пустой record_key
+            # в Excel или дубль ответа формы) — иначе вторая молча перезапишет первую.
+            report.skip(rec.source_key, "дубликат source_key в пакете — строка пропущена")
+            continue
+        seen.add(rec.source_key)
         ok_records.append(rec)
     return ok_records, report
 
 
-def normalize_and_store(
-    db: Session, records: list[RawRecord], spec: SourceSpec
+def store_normalized(
+    db: Session, records: list[NormalizedRecord], report: NormalizationReport
 ) -> NormalizationReport:
-    """Пакетный путь для коннекторов: нормализация + сохранение.
+    """Сохранить уже провалидированные записи (коммит на каждую).
 
-    Коммит — на каждую принятую запись: одна битая строка не роняет партию.
+    Выделено из normalize_and_store, чтобы коннекторы могли выполнить
+    подготовительные действия (например, замену партии) только после валидации.
     """
-    ok_records, report = normalize_batch(db, records, spec)
-    for rec in ok_records:
+    for rec in records:
         try:
             created = store_record(db, rec)
             db.commit()
@@ -249,3 +272,11 @@ def normalize_and_store(
         else:
             report.updated += 1
     return report
+
+
+def normalize_and_store(
+    db: Session, records: list[RawRecord], spec: SourceSpec
+) -> NormalizationReport:
+    """Пакетный путь для коннекторов: нормализация + сохранение."""
+    ok_records, report = normalize_batch(db, records, spec)
+    return store_normalized(db, ok_records, report)

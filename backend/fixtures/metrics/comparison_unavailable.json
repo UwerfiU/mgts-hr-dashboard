@@ -6,15 +6,10 @@
     "mentor": { "submitted": 5, "expected": 5 }
   },
   "series": [
-    { "role": "intern", "points": [{ "month": 1, "value": 3.6, "n": 5 }] },
-    { "role": "mentor", "points": [{ "month": 1, "value": 3.4, "n": 5 }] }
+    { "role": "intern", "points": [{ "month": 1, "value": 3.6, "n": 5 }] }
   ],
   "distribution": [
     { "role": "intern", "buckets": [{ "score": 3, "count": 3 }, { "score": 4, "count": 2 }] }
   ],
-  "comparison": {
-    "status": "unavailable",
-    "direction": "intern_minus_mentor",
-    "points": [{ "month": 1, "value": null, "nPairs": 0 }]
-  }
+  "comparison": { "status": "not_configured", "direction": null, "points": [] }
 }

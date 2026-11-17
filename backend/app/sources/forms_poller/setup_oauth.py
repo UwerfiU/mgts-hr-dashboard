@@ -35,10 +35,14 @@ def main() -> int:
     from google_auth_oauthlib.flow import InstalledAppFlow  # ленивый импорт
 
     flow = InstalledAppFlow.from_client_secrets_file(args.secrets, SCOPES)
-    creds = flow.run_console()  # интерактивно: браузер + код подтверждения
+    if hasattr(flow, "run_local_server"):
+        creds = flow.run_local_server(port=0)  # браузер + локальный redirect
+    else:  # очень старые версии библиотеки
+        creds = flow.run_console()
     token_path = Path(settings.google_token_cache)
     token_path.parent.mkdir(parents=True, exist_ok=True)
     token_path.write_text(creds.to_json(), encoding="utf-8")
+    token_path.chmod(0o600)  # токен содержит refresh token
     print(f"Токен сохранён: {token_path}")
     return 0
 

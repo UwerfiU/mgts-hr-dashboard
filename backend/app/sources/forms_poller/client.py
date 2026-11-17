@@ -47,6 +47,7 @@ class FormsClient:
         if creds.expired and creds.refresh_token:
             creds.refresh(Request())
             self.token_path.write_text(creds.to_json(), encoding="utf-8")  # сохраняем обновлённый токен
+            self.token_path.chmod(0o600)
         if not creds.valid:
             raise FormsClientError("OAuth-токен недействителен; повторите setup_oauth")
         return creds.token

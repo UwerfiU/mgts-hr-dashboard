@@ -1,4 +1,6 @@
 """GET /api/v1/meta — справочники, режим данных, права, статус синхронизации."""
+from datetime import timezone
+
 from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -42,9 +44,21 @@ def meta(db: Session = Depends(get_db)):
 
     aliases = {
         "allowed": personal_ok,
-        # псевдонимы отдаём только при разрешённых персональных срезах
-        "interns": sorted({i.alias for i in db.scalars(select(Intern))}) if personal_ok else [],
-        "mentors": sorted({m.alias for m in db.scalars(select(Mentor))}) if personal_ok else [],
+        # псевдонимы и непрозрачные коды отдаём только при разрешённых персональных срезах
+        "interns": (
+            [
+                {"id": i.opaque_id, "alias": i.alias}
+                for i in sorted(db.scalars(select(Intern)), key=lambda r: r.alias)
+            ]
+            if personal_ok else []
+        ),
+        "mentors": (
+            [
+                {"id": m.opaque_id, "alias": m.alias}
+                for m in sorted(db.scalars(select(Mentor)), key=lambda r: r.alias)
+            ]
+            if personal_ok else []
+        ),
     }
 
     return {
@@ -62,7 +76,10 @@ def meta(db: Session = Depends(get_db)):
         "sync": [
             {
                 "connector": s.connector,
-                "lastSuccessAt": s.last_success_at.isoformat() if s.last_success_at else None,
+                "lastSuccessAt": (
+                    (s.last_success_at if s.last_success_at.tzinfo else s.last_success_at.replace(tzinfo=timezone.utc)).isoformat()
+                    if s.last_success_at else None
+                ),
                 "lastError": s.last_error,
             }
             for s in get_sync_states(db)

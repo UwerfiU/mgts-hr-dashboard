@@ -23,10 +23,11 @@ def client():
 
 @pytest.fixture()
 def db():
-    """Сессия БД (таблицы гарантированно созданы)."""
+    """Сессия БД с гарантированно загруженным каталогом (порядок тестов не важен)."""
     init_db()
     session = SessionLocal()
     try:
+        load_catalog(session)
         yield session
     finally:
         session.close()

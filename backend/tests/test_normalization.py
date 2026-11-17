@@ -4,7 +4,7 @@ from dataclasses import asdict
 import pytest
 from sqlalchemy import select
 
-from app.db.models import Answer, Intern, Submission
+from app.db.models import Intern, Submission
 from app.normalization.core import normalize_and_store, normalize_record, resolve_intern
 from app.normalization.spec import SourceSpec
 from app.sources.base import RawRecord
@@ -193,3 +193,40 @@ def test_empty_comment_no_answer(catalog_db):
     sub2 = catalog_db.scalar(select(Submission).where(Submission.source_key == "n11:r2"))
     comment = next(a for a in sub2.answers if a.question_key == "comment_intern")
     assert comment.text == "нормальный месяц"  # обрезка пробелов
+
+
+def test_nan_score_skipped(catalog_db):
+    """NaN не должен проходить валидацию и молча становиться NULL в SQLite."""
+    r = normalize_and_store(catalog_db, [_excel_raw("n12:r1", score_skill=float("nan"))], _excel_spec())
+    assert r.accepted == 0 and len(r.skipped) == 1
+    assert "конечное число" in r.skipped[0].reason
+
+
+def test_numeric_in_text_question_skipped(catalog_db):
+    r = normalize_and_store(catalog_db, [_excel_raw("n13:r1", score_skill=4, comment_text=5)], _excel_spec())
+    assert r.accepted == 0 and len(r.skipped) == 1
+    assert "ожидался текст" in r.skipped[0].reason
+
+
+def test_role_must_match_questionnaire(catalog_db):
+    spec = SourceSpec(
+        source="excel", role="mentor", questionnaire="intern_v1", cycle_field="month",
+        field_map={"score_skill": "skill_growth"}, about_intern_field="trainee_name",
+    )
+    rec, reasons = normalize_record(catalog_db, _excel_raw("n14:r1", score_skill=4), spec)
+    assert rec is None
+    assert any("не совпадает с ролью анкеты" in r for r in reasons)
+
+
+def test_duplicate_source_key_in_batch_skipped(catalog_db):
+    """Одинаковый source_key в пакете: вторая строка не перезаписывает первую молча."""
+    r = normalize_and_store(
+        catalog_db,
+        [_excel_raw("n15:r1", score_skill=4), _excel_raw("n15:r1", score_skill=2)],
+        _excel_spec(),
+    )
+    assert (r.accepted, r.created) == (1, 1)
+    assert any("дубликат" in p.reason for p in r.skipped)
+    sub = catalog_db.scalar(select(Submission).where(Submission.source_key == "n15:r1"))
+    answers = {a.question_key: a for a in sub.answers}
+    assert answers["skill_growth"].score == 4  # сохранена первая, не последняя

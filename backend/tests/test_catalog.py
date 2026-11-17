@@ -100,6 +100,35 @@ def test_invalid_scale(tmp_path, catalog_db):
     assert "scale_min" in str(e.value)
 
 
+def test_invalid_metric_role_mismatch(tmp_path, catalog_db):
+    """Метрика роли intern не может ссылаться на вопрос анкеты наставника."""
+    data = _default_data()
+    data["metrics"].append({"id": "broken", "role": "intern",
+                            "question_keys": ["skill_growth_mentor"]})
+    with pytest.raises(CatalogConfigError) as e:
+        load_catalog(catalog_db, _write(tmp_path, data))
+    assert "метрика объявлена для роли" in str(e.value)
+
+
+def test_invalid_comparison_direction_and_rule(tmp_path, catalog_db):
+    data = _default_data()
+    pair = data["comparison_pairs"][0]
+    pair["direction"] = "sideways"
+    pair["rule"] = "made_up"
+    with pytest.raises(CatalogConfigError) as e:
+        load_catalog(catalog_db, _write(tmp_path, data))
+    msg = str(e.value)
+    assert "direction" in msg and "rule" in msg
+
+
+def test_invalid_version(tmp_path, catalog_db):
+    data = _default_data()
+    data["questionnaires"][0]["version"] = 0
+    with pytest.raises(CatalogConfigError) as e:
+        load_catalog(catalog_db, _write(tmp_path, data))
+    assert "version" in str(e.value)
+
+
 def test_access_helpers(catalog_db):
     intern_qs = access.get_questions(catalog_db, role="intern")
     mentor_qs = access.get_questions(catalog_db, role="mentor")

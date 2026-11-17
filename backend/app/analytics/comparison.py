@@ -23,14 +23,19 @@ def find_pair_for_metric(db: Session, metric: Metric) -> ComparisonPair | None:
 
 
 def _score_by_intern(subs: list[Submission], question_key: str) -> dict[int, float]:
-    out: dict[int, float] = {}
+    """{intern_id: средняя оценка} — несколько ответов об одном стажёре усредняются.
+
+    Раньше «последний побеждал»: при двух наставниках за цикл в расчёт попадало
+    произвольное значение.
+    """
+    acc: dict[int, list[float]] = {}
     for s in subs:
         if s.about_intern_id is None:
             continue
         for a in s.answers:
             if a.question_key == question_key and isinstance(a.score, (int, float)):
-                out[s.about_intern_id] = a.score
-    return out
+                acc.setdefault(s.about_intern_id, []).append(float(a.score))
+    return {iid: sum(vals) / len(vals) for iid, vals in acc.items()}
 
 
 def comparison(

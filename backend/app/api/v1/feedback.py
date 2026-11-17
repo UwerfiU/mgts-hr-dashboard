@@ -9,6 +9,7 @@
 будут добавлены в WP9 тем же срезом.
 """
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ... import policy
@@ -16,7 +17,8 @@ from ...analytics.common import filtered_submissions, qids_for_role
 from ...catalog.access import get_question
 from ...config import settings
 from ...db.database import get_db
-from .codes import forbidden
+from ...db.models import Intern
+from .codes import CODE_PERSON_NOT_FOUND, forbidden, not_found
 
 router = APIRouter(prefix="/api/v1", tags=["v1"])
 
@@ -35,13 +37,13 @@ def feedback(
 
     intern_id = None
     if internId is not None:
-        if not (policy.personal_slices_allowed() and policy.numeric_history_allowed()):
+        # Тексты разрешены отдельно от числовой истории: numeric_history_allowed
+        # здесь не требуется. Нужна лишь подтверждённая связь «ответ → человек».
+        if not policy.personal_slices_allowed():
             return forbidden("PERSONAL_SLICE_NOT_ALLOWED")
-        from ...db.models import Intern
-
-        row = db.get(Intern, int(internId)) if str(internId).isdigit() else None
+        row = db.scalar(select(Intern).where(Intern.opaque_id == str(internId)))
         if row is None:
-            return {"texts": []}
+            return not_found(CODE_PERSON_NOT_FOUND)
         intern_id = row.id
 
     wanted = {r for r in ("intern", "mentor") if role is None or r == role}

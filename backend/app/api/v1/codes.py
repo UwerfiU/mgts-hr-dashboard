@@ -8,7 +8,9 @@ from fastapi.responses import JSONResponse
 CODE_PERSONAL_SLICE_NOT_ALLOWED = "PERSONAL_SLICE_NOT_ALLOWED"
 CODE_TEXTS_NOT_ALLOWED = "TEXTS_NOT_ALLOWED"
 CODE_METRIC_NOT_FOUND = "METRIC_NOT_FOUND"
+CODE_PERSON_NOT_FOUND = "PERSON_NOT_FOUND"
 CODE_BAD_MONTH_RANGE = "BAD_MONTH_RANGE"
+CODE_ONE_FILTER_ONLY = "ONE_FILTER_ONLY"
 
 MESSAGES = {
     CODE_PERSONAL_SLICE_NOT_ALLOWED: (
@@ -19,7 +21,9 @@ MESSAGES = {
         "Показ текстовых комментариев запрещён политикой; числовая аналитика доступна."
     ),
     CODE_METRIC_NOT_FOUND: "Метрика не найдена в каталоге.",
+    CODE_PERSON_NOT_FOUND: "Участник с таким идентификатором не найден.",
     CODE_BAD_MONTH_RANGE: "Некорректный диапазон циклов.",
+    CODE_ONE_FILTER_ONLY: "Укажите только один персональный фильтр: internId или mentorId.",
 }
 
 

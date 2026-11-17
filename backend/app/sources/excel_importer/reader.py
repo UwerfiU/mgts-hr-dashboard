@@ -35,14 +35,30 @@ def _make_source_key(record_key_cfg: dict, payload: dict, file_hash: str) -> str
         return f"stable:{str(value).strip()}"
     if rtype == "file_row_hash":
         cols = record_key_cfg.get("columns") or []
+        if not cols:
+            raise ValueError(
+                "file_row_hash: не задан record_key.columns — все строки получили бы "
+                "одинаковый ключ; укажите столбцы, идентифицирующие запись"
+            )
         parts = "|".join(str(payload.get(c, "")).strip() for c in cols)
         row_hash = hashlib.sha1(parts.encode("utf-8")).hexdigest()[:12]
         return f"{file_hash}:{row_hash}"
     raise ValueError(f"Неизвестный тип record_key: {rtype!r}")
 
 
-def read_records(file_path: str | Path, sheet: str | None, record_key_cfg: dict) -> list[RawRecord]:
-    """Строки листа → RawRecord. payload = {заголовок столбца: значение ячейки}."""
+def read_records(
+    file_path: str | Path,
+    sheet: str | None,
+    record_key_cfg: dict,
+    required_columns: list[str] | None = None,
+) -> list[RawRecord]:
+    """Строки листа → RawRecord. payload = {заголовок столбца: значение ячейки}.
+
+    required_columns — колонки, без которых импорт бессмысленен (маппинг, цикл,
+    «о ком», ключ записи): отсутствие считается ошибкой конфига, а не пустым
+    значением. Дублирующиеся заголовки также отклоняются: иначе значение одного
+    столбца молча затирает другой.
+    """
     path = Path(file_path)
     file_hash = file_fingerprint(path)
     wb = load_workbook(path, data_only=True, read_only=True)
@@ -55,6 +71,16 @@ def read_records(file_path: str | Path, sheet: str | None, record_key_cfg: dict)
     if not rows:
         return []
     header = [str(h).strip() if h is not None else f"col_{i}" for i, h in enumerate(rows[0])]
+
+    duplicates = sorted({h for h in header if header.count(h) > 1})
+    if duplicates:
+        raise ValueError(f"дублирующиеся заголовки столбцов: {', '.join(duplicates)}")
+    if required_columns:
+        missing = [c for c in required_columns if c and c not in header]
+        if missing:
+            raise ValueError(
+                "в файле нет столбцов, указанных в конфиге: " + ", ".join(sorted(missing))
+            )
 
     records: list[RawRecord] = []
     for row in rows[1:]:

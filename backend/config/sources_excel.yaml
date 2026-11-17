@@ -33,10 +33,11 @@ files:
     sheet: Sheet1
     cycle_field: month
     about_intern_field: intern_name       # TODO(WP7): подтвердить, что связь надёжна
+    author_mentor_field: mentor_name      # кто отвечал (для фильтра /metrics?mentorId=)
     submitted_at_field: date
     record_key:
       type: file_row_hash
-      columns: [intern_name, month]
+      columns: [mentor_name, intern_name, month]
     field_map:
       score_performance: performance
       score_proactivity: proactivity

@@ -4,7 +4,11 @@
 
 5 стажёров × 5 наставников (каждый наставник — за своего стажёра), циклы 1–6,
 обе анкеты. Запись идёт через нормализацию WP2 (не в обход): идемпотентно по
-source_key, повторный seed не создаёт дублей; --reset сначала очищает демо-данные.
+source_key, повторный seed не создаёт дублей; --reset сначала очищает демо-данные
+(включая неиспользуемых демо-участников).
+
+Помимо источников `excel`/`form` синтетика помечается `source="demo"`: так её
+можно безопасно удалить (`--reset`) и отличить от реальных данных.
 
 «Сюжет» для демо:
   * «Демо Глеб» — стабильно слабые мотивация и удовлетворённость, низкая поддержка
@@ -22,7 +26,7 @@ from dataclasses import dataclass
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ..db.models import Submission
+from ..db.models import Intern, Mentor, Submission
 from ..normalization.core import normalize_and_store
 from ..normalization.spec import SourceSpec
 from ..sources.base import RawRecord
@@ -122,11 +126,26 @@ def _count(db: Session, role: str) -> int:
     ) or 0
 
 
+def _delete_unreferenced(db: Session, model, aliases: list[str], ref_column) -> None:
+    """Удалить демо-участников с указанными псевдонимами, если на них больше нет ссылок."""
+    for row in db.scalars(select(model).where(model.alias.in_(aliases))).all():
+        used = db.scalar(
+            select(func.count()).select_from(Submission).where(ref_column == row.id)
+        )
+        if not used:
+            db.delete(row)
+
+
 def run(db: Session, reset: bool = False) -> dict:
     """Сид демо-данных через нормализацию. Возвращает счётчики."""
     if reset:
         for s in db.scalars(select(Submission).where(Submission.source == "demo")):
             db.delete(s)  # ответы удаляются каскадом (cascade delete-orphan)
+        db.flush()
+        # Убираем и «фантомных» демо-людей, если на них не ссылаются другие данные:
+        # иначе после смены псевдонимов в /meta остаются старые участники.
+        _delete_unreferenced(db, Intern, INTERN_ALIAS, Submission.about_intern_id)
+        _delete_unreferenced(db, Mentor, MENTOR_ALIAS, Submission.author_mentor_id)
         db.flush()
 
     intern_records, mentor_records = build_records()
