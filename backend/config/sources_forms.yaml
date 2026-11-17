@@ -1,0 +1,35 @@
+# Настройки коннектора Google Forms (критерий B4, коннектор — WP4).
+# Poller делает исходящие запросы к Forms API — публичный адрес не нужен.
+# Синхронизация: при запуске + по интервалу; upsert по formId + responseId.
+#
+# TODO(WP4): создать две тестовые формы, вписать formId и маппинг ID вопросов.
+# TODO(до защиты): проверить доступ к формам с ноутбука, на котором будет защита.
+
+sync:
+  interval_seconds: 120                  # интервал перечитывания
+  strategy: full_reread                  # перечитываем все страницы обеих форм (объём кейса мал)
+
+forms:
+  - form_id: TODO_FORM_ID_INTERN         # ID формы анкеты стажёра
+    role: intern
+    questionnaire: intern_v1
+    cycle_field: TODO                    # ID вопроса-цикла в форме (или правило из текста/даты)
+    about_intern_field: TODO             # поле, по которому определяется «о ком» (если есть)
+    submitted_at_field: createdTime      # встроенное поле Forms API
+    question_map:                        # «ID вопроса в форме → внутренний ключ»
+      # TODO_QUESTION_ID: skill_growth
+      # TODO_QUESTION_ID: task_clarity
+      # TODO_QUESTION_ID: comment_intern
+
+  - form_id: TODO_FORM_ID_MENTOR
+    role: mentor
+    questionnaire: mentor_v1
+    cycle_field: TODO
+    about_intern_field: TODO             # как в ответе наставника определить стажёра
+    submitted_at_field: createdTime
+    question_map: {}                     # заполнить при WP4
+
+# OAuth (файл client secrets НЕ коммитится; путь задаётся в .env)
+google:
+  client_secrets_env: MGTS_GOOGLE_CLIENT_SECRETS_FILE
+  scopes: [https://www.googleapis.com/auth/forms.responses.readonly]

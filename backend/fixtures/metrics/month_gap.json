@@ -1,0 +1,38 @@
+{
+  "dataMode": "demo",
+  "metricId": "skill_growth",
+  "coverage": {
+    "intern": { "submitted": 8, "expected": 15 },
+    "mentor": { "submitted": 6, "expected": 15 }
+  },
+  "series": [
+    {
+      "role": "intern",
+      "points": [
+        { "month": 1, "value": 3.8, "n": 5 },
+        { "month": 2, "value": null, "n": 0 },
+        { "month": 3, "value": 4.1, "n": 3 }
+      ]
+    },
+    {
+      "role": "mentor",
+      "points": [
+        { "month": 1, "value": 3.25, "n": 4 },
+        { "month": 2, "value": null, "n": 0 },
+        { "month": 3, "value": 3.5, "n": 2 }
+      ]
+    }
+  ],
+  "distribution": [
+    { "role": "intern", "buckets": [{ "score": 4, "count": 5 }, { "score": 5, "count": 3 }] }
+  ],
+  "comparison": {
+    "status": "available",
+    "direction": "intern_minus_mentor",
+    "points": [
+      { "month": 1, "value": 0.5, "nPairs": 4 },
+      { "month": 2, "value": null, "nPairs": 0 },
+      { "month": 3, "value": 0.75, "nPairs": 2 }
+    ]
+  }
+}

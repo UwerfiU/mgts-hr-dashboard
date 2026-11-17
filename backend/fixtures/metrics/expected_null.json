@@ -1,0 +1,15 @@
+{
+  "dataMode": "demo",
+  "metricId": "satisfaction",
+  "coverage": {
+    "intern": { "submitted": 4, "expected": null },
+    "mentor": { "submitted": 0, "expected": null }
+  },
+  "series": [
+    { "role": "intern", "points": [{ "month": 1, "value": 3.5, "n": 4 }] }
+  ],
+  "distribution": [
+    { "role": "intern", "buckets": [{ "score": 3, "count": 2 }, { "score": 4, "count": 2 }] }
+  ],
+  "comparison": { "status": "not_configured", "direction": null, "points": [] }
+}

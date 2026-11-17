@@ -1,0 +1,35 @@
+{
+  "dataMode": "demo",
+  "cycles": [1, 2, 3, 4, 5, 6],
+  "metrics": [
+    {
+      "metricId": "skill_growth",
+      "role": "intern",
+      "label": "Рост профессиональных навыков",
+      "scale": { "min": 1, "max": 5 },
+      "questions": [{ "key": "skill_growth", "label": "Рост профессиональных навыков" }]
+    },
+    {
+      "metricId": "skill_growth_mentor",
+      "role": "mentor",
+      "label": "Рост профессиональных навыков (оценка наставника)",
+      "scale": { "min": 1, "max": 5 },
+      "questions": [{ "key": "skill_growth_mentor", "label": "Рост профессиональных навыков (оценка наставника)" }]
+    }
+  ],
+  "aliases": { "allowed": false, "interns": [], "mentors": [] },
+  "categories": [
+    { "id": "comment_intern", "label": "Комментарий стажёра", "role": "intern" },
+    { "id": "comment_mentor", "label": "Комментарий наставника", "role": "mentor" }
+  ],
+  "detailPermissions": {
+    "personalSlicesAllowed": false,
+    "numericHistoryAllowed": false,
+    "textsAllowed": true
+  },
+  "aiAvailable": false,
+  "sync": [
+    { "connector": "form:FORM_ID_INTERN", "lastSuccessAt": "2026-11-16T18:00:00+00:00", "lastError": null },
+    { "connector": "form:FORM_ID_MENTOR", "lastSuccessAt": null, "lastError": "Forms API 403: access denied" }
+  ]
+}
