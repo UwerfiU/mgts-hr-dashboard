@@ -1,10 +1,21 @@
-# TODO(WP1): заменить на нормализованную модель по PLAN.md §3
-# (Questionnaire/Question/Metric/ComparisonPair/Intern/Mentor/Submission/Answer/SyncState).
-# Текущие модели — временный вариант из начального скелета.
-"""ORM-модели данных."""
+"""Нормализованная ORM-модель данных (PLAN.md §3, задание WP1).
+
+Сущности:
+  * каталог: Questionnaire → Question; Metric; ComparisonPair —
+    материализация config/catalog.yaml (синхронизирует app.catalog.loader);
+  * участники: Intern / Mentor (непрозрачные стабильные коды + псевдонимы);
+  * данные: Submission (отправка с provenance) → Answer (ответ на вопрос);
+  * инфраструктура: SyncState (статус коннекторов).
+
+Принципы:
+  * уникальность отправки — по (source, source_key): основа идемпотентности;
+  * связь «о ком» (about_intern_id) опциональна: отправка без связи хранится
+    и учитывается в агрегатах, но не попадает в персональные срезы;
+  * пропуск оценки — Answer.score = NULL (никогда не 0).
+"""
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
@@ -14,18 +25,74 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-class Trainee(Base):
-    """Стажёр программы."""
+# --- Каталог (материализация config/catalog.yaml) ---------------------------
 
-    __tablename__ = "trainees"
+
+class Questionnaire(Base):
+    """Анкета: роль + версия. qid — ключ из конфига (напр. "intern_v1")."""
+
+    __tablename__ = "questionnaires"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(200), unique=True, index=True)
-    department: Mapped[str | None] = mapped_column(String(200))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    qid: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    role: Mapped[str] = mapped_column(String(16), index=True)  # intern | mentor
+    version: Mapped[int] = mapped_column(Integer, default=1)
 
-    responses: Mapped[list["Response"]] = relationship(back_populates="trainee")
-    signals: Mapped[list["Signal"]] = relationship(back_populates="trainee")
+    questions: Mapped[list["Question"]] = relationship(back_populates="questionnaire")
+
+
+class Question(Base):
+    """Вопрос анкеты. Ключ глобально уникален (упрощает ссылки метрик и ответов)."""
+
+    __tablename__ = "questions"
+    __table_args__ = (UniqueConstraint("qid", "key", name="uq_question"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    qid: Mapped[str] = mapped_column(String(64), ForeignKey("questionnaires.qid"), index=True)
+    key: Mapped[str] = mapped_column(String(64), index=True)
+    label: Mapped[str] = mapped_column(String(300))
+    type: Mapped[str] = mapped_column(String(16))  # score | text
+    scale_min: Mapped[int | None] = mapped_column(Integer)
+    scale_max: Mapped[int | None] = mapped_column(Integer)
+
+    questionnaire: Mapped["Questionnaire"] = relationship(back_populates="questions")
+
+
+class Metric(Base):
+    """Показатель для /api/v1/metrics: metricId → вопросы."""
+
+    __tablename__ = "metrics"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    metric_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    role: Mapped[str] = mapped_column(String(16), index=True)  # intern | mentor
+    question_keys: Mapped[list] = mapped_column(JSON, default=list)
+
+
+class ComparisonPair(Base):
+    """Явно настроенная пара сопоставимых вопросов для блока comparison."""
+
+    __tablename__ = "comparison_pairs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    pair_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    intern_question: Mapped[str] = mapped_column(String(64))
+    mentor_question: Mapped[str] = mapped_column(String(64))
+    direction: Mapped[str] = mapped_column(String(32), default="intern_minus_mentor")
+    rule: Mapped[str] = mapped_column(String(32), default="paired_mean")
+
+
+# --- Участники ----------------------------------------------------------------
+
+
+class Intern(Base):
+    """Стажёр. opaque_id — стабильный непрозрачный код, alias — псевдоним для дашборда."""
+
+    __tablename__ = "interns"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    opaque_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    alias: Mapped[str] = mapped_column(String(200))
 
 
 class Mentor(Base):
@@ -34,77 +101,65 @@ class Mentor(Base):
     __tablename__ = "mentors"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(200), unique=True, index=True)
-    department: Mapped[str | None] = mapped_column(String(200))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    opaque_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    alias: Mapped[str] = mapped_column(String(200))
 
 
-class Pair(Base):
-    """Связка «стажёр ↔ наставник» (в программе 5 и 5, т.е. 1:1)."""
-
-    __tablename__ = "pairs"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    trainee_id: Mapped[int] = mapped_column(ForeignKey("trainees.id"), unique=True, index=True)
-    mentor_id: Mapped[int] = mapped_column(ForeignKey("mentors.id"), unique=True, index=True)
-
-    trainee: Mapped["Trainee"] = relationship()
-    mentor: Mapped["Mentor"] = relationship()
+# --- Данные --------------------------------------------------------------------
 
 
-class Response(Base):
-    """Ответ на ежемесячный опрос (форма стажёра или формы наставника).
+class Submission(Base):
+    """Отправка (ответ на анкету) с provenance.
 
-    Уникальность: один ответ на (тип респондента, стажёр, месяц) — повторная
-    отправка той же пары обновляет запись (идемпотентность вебхука).
+    source_key — ключ записи в источнике: для форм formId+responseId,
+    для Excel — по правилу из конфига (file_row_hash / stable_id).
+    Уникальность (source, source_key) = идемпотентность импорта/синхронизации.
     """
 
-    __tablename__ = "responses"
-    __table_args__ = (UniqueConstraint("respondent_type", "trainee_id", "month", name="uq_response"),)
+    __tablename__ = "submissions"
+    __table_args__ = (UniqueConstraint("source", "source_key", name="uq_submission"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    respondent_type: Mapped[str] = mapped_column(String(16), index=True)  # trainee | mentor
-    trainee_id: Mapped[int] = mapped_column(ForeignKey("trainees.id"), index=True)
-    month: Mapped[int] = mapped_column(Integer, index=True)  # месяц программы, 1..6
-
-    ratings: Mapped[dict] = mapped_column(JSON, default=dict)  # {question_key: число}
-    comment: Mapped[str | None] = mapped_column(Text)
-    raw: Mapped[dict | None] = mapped_column(JSON)  # исходный payload формы как есть
+    source: Mapped[str] = mapped_column(String(16), index=True)  # excel | form
+    source_key: Mapped[str] = mapped_column(String(200), index=True)
+    questionnaire: Mapped[str] = mapped_column(String(64), index=True)  # qid анкеты
+    cycle: Mapped[int] = mapped_column(Integer, index=True)  # цикл программы, 1–6
+    role: Mapped[str] = mapped_column(String(16), index=True)  # intern | mentor
+    about_intern_id: Mapped[int | None] = mapped_column(
+        ForeignKey("interns.id"), nullable=True, index=True
+    )
+    author_mentor_id: Mapped[int | None] = mapped_column(
+        ForeignKey("mentors.id"), nullable=True, index=True
+    )  # кто отвечал (для role=mentor); нужен для фильтра «по наставнику»
+    file_batch_id: Mapped[str | None] = mapped_column(String(64))  # для Excel-партий (замена партии)
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
-    trainee: Mapped["Trainee"] = relationship(back_populates="responses")
+    answers: Mapped[list["Answer"]] = relationship(back_populates="submission", cascade="all, delete-orphan")
 
 
-class CommentInsight(Base):
-    """Результат AI-анализа текстового комментария."""
+class Answer(Base):
+    """Ответ на конкретный вопрос внутри отправки."""
 
-    __tablename__ = "comment_insights"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    response_id: Mapped[int] = mapped_column(ForeignKey("responses.id"), unique=True, index=True)
-    sentiment_score: Mapped[float] = mapped_column(default=0.0)  # -1..1
-    sentiment_label: Mapped[str] = mapped_column(String(16), default="neutral")  # positive|neutral|negative
-    risk_level: Mapped[str] = mapped_column(String(16), default="low")  # low|medium|high
-    issues: Mapped[list] = mapped_column(JSON, default=list)  # ["проблема 1", ...]
-    summary: Mapped[str | None] = mapped_column(Text)
-    provider: Mapped[str] = mapped_column(String(16), default="none")  # llm|lexicon|none
-
-
-class Signal(Base):
-    """Сигнал о потенциальной проблеме по стажёру за месяц (с причиной)."""
-
-    __tablename__ = "signals"
-    __table_args__ = (UniqueConstraint("trainee_id", "month", "type", name="uq_signal"),)
+    __tablename__ = "answers"
+    __table_args__ = (UniqueConstraint("submission_id", "question_key", name="uq_answer"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    trainee_id: Mapped[int] = mapped_column(ForeignKey("trainees.id"), index=True)
-    month: Mapped[int] = mapped_column(Integer, index=True)
-    type: Mapped[str] = mapped_column(String(32))  # low_rating|rating_drop|divergence|downward_trend|negative_comment
-    severity: Mapped[str] = mapped_column(String(16))  # low|medium|high
-    title: Mapped[str] = mapped_column(String(200))
-    reason: Mapped[str] = mapped_column(Text)  # человекочитаемая причина
-    source: Mapped[str] = mapped_column(String(16), default="rule")  # rule|ai
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    submission_id: Mapped[int] = mapped_column(ForeignKey("submissions.id"), index=True)
+    question_key: Mapped[str] = mapped_column(String(64))
+    score: Mapped[float | None] = mapped_column(Float)  # NULL = пропуск (не 0!)
+    text: Mapped[str | None] = mapped_column(Text)
 
-    trainee: Mapped["Trainee"] = relationship(back_populates="signals")
+    submission: Mapped["Submission"] = relationship(back_populates="answers")
+
+
+class SyncState(Base):
+    """Статус коннектора синхронизации (для /api/v1/meta и диагностики)."""
+
+    __tablename__ = "sync_state"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    connector: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str | None] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)

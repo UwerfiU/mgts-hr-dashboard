@@ -1,23 +1,72 @@
 """Точка входа FastAPI-приложения.
 
-Состояние (WP0): каркас — init БД + /health.
-Дальше:
-  * WP4 — запуск poller'а форм в lifespan;
-  * WP5 — маршруты /api/v1/{meta,metrics,feedback}.
+Состояние:
+  * WP1 — каталог из config/catalog.yaml при старте;
+  * WP4 — poller Google Forms (режим real + настроенный OAuth); в demo не стартует.
+Дальше: WP5 — маршруты /api/v1/{meta,metrics,feedback}.
 """
+import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
+import yaml
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .db.database import init_db
+from .api.v1 import feedback as v1_feedback
+from .api.v1 import meta as v1_meta
+from .api.v1 import metrics as v1_metrics
+from .catalog.loader import load_catalog
+from .config import settings
+from .db.database import SessionLocal, init_db
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("mgts")
+
+
+def _build_forms_poller():
+    """Poller для режима real; None — если не настроен (demo или нет ключей)."""
+    if settings.data_mode != "real":
+        logger.info("Forms poller отключён: data_mode=%s", settings.data_mode)
+        return None
+    if not settings.google_client_secrets_file and not Path(settings.google_token_cache).exists():
+        logger.info("Forms poller отключён: нет OAuth-токена (python -m app.sources.forms_poller.setup_oauth)")
+        return None
+
+    from .sources.forms_poller.client import FormsClient
+    from .sources.forms_poller.poller import FormsPoller
+
+    cfg_path = Path(settings.catalog_path).parent / "sources_forms.yaml"
+    cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
+    forms = [f for f in cfg.get("forms", []) if f.get("form_id", "").startswith("TODO") is False]
+    if not forms:
+        logger.info("Forms poller отключён: в %s нет заполненных form_id", cfg_path)
+        return None
+
+    client = FormsClient(
+        client_secrets_file=settings.google_client_secrets_file,
+        token_path=settings.google_token_cache,
+    )
+    interval = settings.sync_interval_sec or (cfg.get("sync") or {}).get("interval_seconds", 120)
+    return FormsPoller(client=client, entries=forms, interval_seconds=interval)
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_db()
-    # WP4: здесь стартует poller форм (старт + интервал)
+    db = SessionLocal()
+    try:
+        load_catalog(db)  # невалидный конфиг каталога → fail fast со списком ошибок
+    finally:
+        db.close()
+
+    poller = _build_forms_poller()
+    if poller is not None:
+        poller.start()
+        logger.info("Forms poller запущен (интервал %d c)", poller.interval_seconds)
     yield
+    if poller is not None:
+        poller.stop()
 
 
 app = FastAPI(
@@ -37,6 +86,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+for r in (v1_meta.router, v1_metrics.router, v1_feedback.router):
+    app.include_router(r)
 
 
 @app.get("/health", tags=["meta"])

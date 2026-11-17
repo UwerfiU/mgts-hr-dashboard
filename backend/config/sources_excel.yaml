@@ -1,6 +1,9 @@
-# Настройки импорта исторических Excel-файлов (критерий B3).
-# Каждый файл описывается отдельно: роль, лист, маппинг столбцов → внутренние вопросы,
-# правило определения цикла и ключ записи (для идемпотентности).
+# Настройки импорта исторических Excel-файлов (критерий B3, коннектор — WP3).
+# Каждый файл описывается отдельно: роль, анкета, лист, маппинг «столбец → вопрос»,
+# правило цикла и ключ записи (для идемпотентности).
+#
+# field_map: «столбец Excel → внутренний ключ вопроса» (ключи — из catalog.yaml;
+# тип поля score/text определяет каталог, пустая ячейка оценки → NULL, не 0).
 #
 # TODO(WP7): заполнить по реальным файлам организаторов. Сейчас — шаблон
 # на синтетических данных (формат описан в tasks/WP3-excel-import.md).
@@ -8,32 +11,36 @@
 files:
   - path: data/intern_history.xlsx        # пример; реальный путь задаётся при WP7
     role: intern
+    questionnaire: intern_v1
     sheet: Sheet1
-    cycle_column: month                  # столбец с циклом (1–6)
-    about_intern_column: trainee_name    # как определить, О КОМ отправка (имя/код → Intern.alias)
-    record_key:                          # правило ключа записи в источнике
-      type: file_row_hash                # file_row_hash | stable_id
-      columns: [trainee_name, month]     # для file_row_hash: столбцы, участвующие в ключе
-    fields:                              # «столбец Excel → внутренний вопрос»
-      skill_growth: score_skill
-      task_clarity: score_tasks
-      mentor_support: score_mentor
-      motivation: score_motivation
-      satisfaction: score_overall
-      comment: comment_text              # текстовое поле (type: text)
+    cycle_field: month                    # столбец с циклом (1–6)
+    about_intern_field: trainee_name      # как определить, О КОМ отправка (псевдоним → Intern.alias)
+    submitted_at_field: date              # опционально; ISO-дата
+    record_key:                           # правило ключа записи в источнике
+      type: file_row_hash                 # file_row_hash | stable_id
+      columns: [trainee_name, month]      # для file_row_hash: столбцы, участвующие в ключе
+    field_map:
+      score_skill: skill_growth
+      score_tasks: task_clarity
+      score_mentor: mentor_support
+      score_motivation: motivation
+      score_overall: satisfaction
+      comment_text: comment_intern
 
   - path: data/mentor_history.xlsx
     role: mentor
+    questionnaire: mentor_v1
     sheet: Sheet1
-    cycle_column: month
-    about_intern_column: intern_name     # TODO(WP7): подтвердить, что связь надёжна
+    cycle_field: month
+    about_intern_field: intern_name       # TODO(WP7): подтвердить, что связь надёжна
+    submitted_at_field: date
     record_key:
       type: file_row_hash
       columns: [intern_name, month]
-    fields:
-      performance: score_performance
-      proactivity: score_proactivity
-      skill_growth_mentor: score_skill
-      communication: score_communication
-      readiness: score_readiness
-      comment: comment_text
+    field_map:
+      score_performance: performance
+      score_proactivity: proactivity
+      score_skill: skill_growth_mentor
+      score_communication: communication
+      score_readiness: readiness
+      comment_text: comment_mentor

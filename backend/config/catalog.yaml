@@ -45,6 +45,10 @@ questions:
     type: score
     scale_min: 1
     scale_max: 5
+  - key: comment_intern
+    questionnaire: intern_v1
+    label: Комментарий стажёра
+    type: text
 
   # --- Анкета наставника ---
   - key: performance
@@ -77,6 +81,10 @@ questions:
     type: score
     scale_min: 1
     scale_max: 5
+  - key: comment_mentor
+    questionnaire: mentor_v1
+    label: Комментарий наставника
+    type: text
 
 # Метрики для /api/v1/metrics: каждая метрика ссылается на вопросы.
 # metricId — то, что использует фронтенд.

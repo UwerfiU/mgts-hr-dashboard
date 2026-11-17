@@ -1,0 +1,7 @@
+{
+  "texts": [
+    { "month": 1, "role": "intern", "questionKey": "comment_intern", "text": "Задачи интересные, наставник помогает." },
+    { "month": 1, "role": "mentor", "questionKey": "comment_mentor", "text": "Стажёр активно включается в задачи." },
+    { "month": 2, "role": "intern", "questionKey": "comment_intern", "text": "Хотелось бы больше обратной связи по задачам." }
+  ]
+}
