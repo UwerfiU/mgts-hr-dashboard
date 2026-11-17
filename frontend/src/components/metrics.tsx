@@ -1,7 +1,8 @@
 import {
-  Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
+  Area, Bar, BarChart, CartesianGrid, Cell, ComposedChart, LabelList, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
 import { useId } from 'react';
+import { GlassLayer } from './glass.tsx';
 import type { Comparison, Coverage, Distribution, Meta, Metric, Role, Series, Slice } from '../data/types.ts';
 import { answers, number, pairs, roles, scaleLabel, signed } from '../format.ts';
 import { RoleMark, SectionTitle } from './ui.tsx';
@@ -16,6 +17,14 @@ export function CoverageStrip({ coverage, meta }: { coverage: Record<Role, Cover
         const knownPercent = expected !== null && percent != null;
         return (
           <section className={`panel coverage ${role}`} key={role}>
+            {knownPercent && (
+              <svg className="coverage-ring" viewBox="0 0 80 80" aria-hidden="true">
+                <circle className="coverage-ring-track" cx="40" cy="40" r="32" />
+                <circle className="coverage-ring-value" cx="40" cy="40" r="32" pathLength="100"
+                  opacity={percent === 0 ? 0 : 1}
+                  strokeDasharray={`${Math.min(100, Math.max(0, percent))} 100`} />
+              </svg>
+            )}
             <div className="coverage-top"><h2>{meta.roles[role]}</h2><RoleMark role={role} variant="dot" /></div>
             <div className="coverage-value">
               <strong>{knownPercent ? `${number(percent)}%` : expected === null ? answers(submitted) : number(submitted)}</strong>
@@ -104,6 +113,7 @@ function TrendTooltip({ active, payload, meta, activeRoles }: { active: boolean;
 export function TrendChart({ meta, metric, series, slice, showTable = true }: {
   meta: Meta; metric: Metric; series: Series[]; slice: Slice; showTable?: boolean;
 }) {
+  const fillId = useId().replace(/:/g, '');
   const activeRoles = roles.filter((role) => metric.scales[role]);
   const visibleCycles = meta.cycles.filter(({ month }) => month >= slice.fromMonth && month <= slice.toMonth);
   const rows: ChartRow[] = visibleCycles.map((cycle) => {
@@ -119,15 +129,38 @@ export function TrendChart({ meta, metric, series, slice, showTable = true }: {
   const split = scales.length === 2 && (scales[0].min !== scales[1].min || scales[0].max !== scales[1].max);
   const gaps = rows.filter((row) => activeRoles.some((role) => row[role] === null)).map(({ label }) => label);
   const available = rows.some((row) => activeRoles.some((role) => row[role] !== null));
+  const latest = rows.at(-1);
 
   return (
-    <section className="panel chart-panel">
-      <SectionTitle title="Средняя оценка по циклам" extra={<Legend meta={meta} metric={metric} showScales={split} />} />
+    <section className="panel chart-panel trend-panel">
+      <GlassLayer />
+      <SectionTitle title={metric.label} description="Средняя оценка по циклам" />
+      {latest && (
+        <div className="latest-scores" role="group" aria-label="Средние оценки за последний выбранный цикл">
+          <p className="latest-period">{meta.cycles.find(({ month }) => month === latest.month)?.label}</p>
+          <div className="latest-values">
+            {activeRoles.map((role) => (
+              <div className={`latest-score ${role}`} key={role}>
+                <span className="latest-role"><RoleMark role={role} />{meta.roles[role]}</span>
+                <strong className={latest[role] === null ? 'latest-missing' : ''}>
+                  {latest[role] === null ? 'Нет оценки' : number(latest[role])}
+                  {latest[role] !== null && <span className="latest-scale" aria-label={`Шкала ${scaleLabel(metric.scales[role]!)}`}> / {number(metric.scales[role]!.max)}</span>}
+                </strong>
+              </div>
+            ))}
+          </div>
+          {split && <Legend meta={meta} metric={metric} showScales />}
+        </div>
+      )}
       {available ? (
         <div className="chart-area trend-area" aria-label={`График динамики. ${metric.label}`}>
           <ResponsiveContainer width="100%" height="100%" minWidth={0} initialDimension={{ width: 600, height: 196 }}>
-            <LineChart data={rows} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-              <CartesianGrid vertical={false} stroke="var(--grid)" />
+            <ComposedChart data={rows} margin={{ top: 12, right: 12, left: 0, bottom: 0 }}>
+              <defs><linearGradient id={fillId} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="var(--intern)" stopOpacity={0.16} />
+                <stop offset="100%" stopColor="var(--intern)" stopOpacity={0.01} />
+              </linearGradient></defs>
+              <CartesianGrid vertical={false} stroke="var(--grid)" strokeDasharray="3 5" />
               <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={11} />
               {activeRoles.filter((_, i) => split || i === 0).map((role, i) => {
                 const scale = metric.scales[role]!;
@@ -140,14 +173,16 @@ export function TrendChart({ meta, metric, series, slice, showTable = true }: {
                 );
               })}
               <Tooltip content={(props) => <TrendTooltip active={props.active} payload={props.payload} meta={meta} activeRoles={activeRoles} />} filterNull={false} />
+              {metric.scales.intern && <Area dataKey="intern" yAxisId={split ? 'intern' : 'shared'} type="linear"
+                fill={`url(#${fillId})`} stroke="none" connectNulls={false} isAnimationActive={false} tooltipType="none" />}
               {activeRoles.map((role) => (
                 <Line key={role} name={meta.roles[role]} dataKey={role} yAxisId={split ? role : 'shared'}
-                  type="linear" connectNulls={false} stroke={color[role]} strokeWidth={2.5}
+                  type="linear" connectNulls={false} stroke={color[role]} strokeWidth={3}
                   strokeDasharray={role === 'mentor' ? '6 5' : undefined}
                   dot={{ r: 4, fill: 'var(--surface)', strokeWidth: 2.5 }}
                   activeDot={{ r: 5 }} isAnimationActive={false} />
               ))}
-            </LineChart>
+            </ComposedChart>
           </ResponsiveContainer>
         </div>
       ) : <div className="chart-empty">За этот период нет оценок показателя.</div>}
@@ -186,27 +221,32 @@ export function DistributionChart({ meta, metric, distribution }: { meta: Meta; 
 
   return (
     <section className="panel chart-panel distribution-panel">
+      <GlassLayer />
       <SectionTitle title="Распределение оценок"
         extra={<Legend meta={meta} metric={metric} showScales={Boolean(split)} variant="bar" />} />
+      {available && <div className="chart-axis-caption" aria-hidden="true"><span>Ответы</span><span>По баллам</span></div>}
       {available ? groups.map((group) => (
         <div key={group.map(({ role }) => role).join()} className={`chart-area ${split ? 'distribution-split' : 'trend-area'}`}
           aria-label={split ? `Распределение: ${meta.roles[group[0].role]}` : 'Распределение по ролям'}>
           <ResponsiveContainer width="100%" height="100%" minWidth={0} initialDimension={{ width: 340, height: split ? 116 : 196 }}>
             <BarChart data={makeRows(group)} barGap={4} margin={{ top: 10, right: 4, bottom: 0, left: 0 }}>
               <defs>
+                <linearGradient id={pattern + '-intern-fill'} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#5da8ff" /><stop offset="100%" stopColor="var(--intern)" />
+                </linearGradient>
                 <pattern id={pattern + group[0].role} width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(35)">
                   <rect width="5" height="5" fill="var(--mentor)" />
                   <path d="M 0 0 L 0 5" stroke="var(--mentor-pattern)" strokeWidth="2" />
                 </pattern>
               </defs>
-              <CartesianGrid vertical={false} stroke="var(--grid)" />
+              <CartesianGrid vertical={false} stroke="var(--grid)" strokeDasharray="3 5" />
               <XAxis dataKey="score" axisLine={false} tickLine={false} tickMargin={9} tickFormatter={number} />
               <YAxis allowDecimals={false} axisLine={false} tickLine={false} tickMargin={6} width={29} tickFormatter={number} />
               <Tooltip labelFormatter={(score) => `Оценка ${score}`} formatter={(count) => number(Number(count))}
                 cursor={{ fill: 'var(--canvas)' }} />
               {group.map(({ role }) => (
-                <Bar key={role} dataKey={role} name={meta.roles[role]} fill={role === 'mentor' ? `url(#${pattern + group[0].role})` : color[role]} maxBarSize={22}
-                  radius={[4, 4, 0, 0]} isAnimationActive={false} />
+                <Bar key={role} dataKey={role} name={meta.roles[role]} fill={role === 'mentor' ? `url(#${pattern + group[0].role})` : `url(#${pattern + '-intern-fill'})`} maxBarSize={32}
+                  radius={[8, 8, 0, 0]} isAnimationActive={false} />
               ))}
             </BarChart>
           </ResponsiveContainer>
@@ -238,6 +278,7 @@ export function ComparisonPanel({ comparison, meta }: { comparison: Comparison; 
   if (comparison.status !== 'available') {
     return (
       <section className="panel comparison-panel">
+        <GlassLayer />
         <SectionTitle title="Сравнение оценок" />
         <p className="inline-state" role="status">{comparison.message ?? comparisonMessages[comparison.status]}</p>
       </section>
@@ -245,16 +286,38 @@ export function ComparisonPanel({ comparison, meta }: { comparison: Comparison; 
   }
   const internFirst = comparison.direction === 'intern_minus_mentor';
   const [first, second] = internFirst ? [meta.roles.intern, meta.roles.mentor] : [meta.roles.mentor, meta.roles.intern];
+  const rows = comparison.points.map((point) => ({...point, label: meta.cycles.find(({month})=>month===point.month)?.shortLabel ?? String(point.month)}));
+  const extent = Math.max(0.5, Math.ceil(Math.max(...rows.map(({value})=>Math.abs(value ?? 0))) * 2) / 2);
   return (
     <section className="panel comparison-panel">
+      <GlassLayer />
       <SectionTitle title="Разница в баллах" extra={<span className="comparison-formula">{first} − {second.toLowerCase()}</span>} />
-      <ul className="comparison-cycles">
+      <div className="comparison-chart" aria-label="Парная разница по циклам">
+        <ResponsiveContainer width="100%" height="100%" minWidth={0} initialDimension={{width:1000,height:196}}>
+          <BarChart data={rows} margin={{top:24,right:16,bottom:4,left:0}}>
+            <CartesianGrid vertical={false} stroke="var(--grid)" strokeDasharray="3 5" />
+            <XAxis dataKey="label" axisLine={false} tickLine={false} tickMargin={22} height={42} />
+            <YAxis domain={[-extent,extent]} tickCount={5} tickFormatter={signed} axisLine={false} tickLine={false} width={42} />
+            <ReferenceLine y={0} stroke="var(--subtle)" strokeWidth={1} />
+            <Tooltip cursor={{fill:'var(--intern-soft)'}} content={({active,payload})=> {
+              const row = payload?.[0]?.payload;
+              return active && row ? <div className="chart-tooltip"><strong>{row.label}: {row.value == null ? 'Нет оценки' : signed(row.value)}</strong><span>{pairs(row.nPairs)}</span></div> : null;
+            }} />
+            <Bar dataKey="value" maxBarSize={44} radius={6} isAnimationActive={false}>
+              {rows.map(({month,value})=><Cell key={month} fill={(value ?? 0)>0 === internFirst ? 'var(--intern)' : 'var(--mentor)'} />)}
+              <LabelList dataKey="value" content={({x,y,width,height,value})=>value == null ? null :
+                <text x={Number(x)+Number(width)/2} y={Number(value)<0 ? Math.max(Number(y),Number(y)+Number(height))+16 : Math.min(Number(y),Number(y)+Number(height))-8} textAnchor="middle" fill="var(--text)" fontSize={14} fontWeight={600}>{signed(Number(value))}</text>} />
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+      <ul className="comparison-cycles" style={{gridTemplateColumns:`repeat(${Math.max(1, rows.length)}, minmax(0, 1fr))`}}>
         {comparison.points.map(({ month, value, nPairs }) => {
           const cycle = meta.cycles.find((item) => item.month === month);
           return (
             <li key={month} className={value == null ? 'comparison-gap' : ''}>
-              <span className="comparison-month">{cycle?.shortLabel ?? month}</span>
-              <strong className={value == null || value === 0 ? '' : (value > 0) === internFirst ? 'intern-text' : 'mentor-text'}>
+              <span className="comparison-month sr-only">{cycle?.shortLabel ?? month}</span>
+              <strong className={value == null ? '' : 'sr-only'}>
                 {value == null ? 'Нет оценки' : signed(value)}
               </strong>
               <span className="pair-count">{pairs(nPairs)}</span>

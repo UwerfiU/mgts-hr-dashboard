@@ -3,9 +3,47 @@ import { test } from 'node:test';
 
 import { createMockClient } from '../src/data/mock.ts';
 import { createHttpClient } from '../src/data/http.ts';
+import { loadDashboardMetrics } from '../src/data/dashboard.ts';
 
 const mock = (scenario = 'normal') => createMockClient(scenario, 0);
 const query = { fromMonth: 1, toMonth: 6, metricId: 'autonomy' };
+
+test('обзор загружает все показатели в одном срезе и сохраняет независимые ошибки', async () => {
+  const api = mock('error');
+  const meta = await api.meta();
+  const rows = await loadDashboardMetrics(api, meta.metrics, { fromMonth: 6, toMonth: 6, internId: 'intern-01' });
+  assert.equal(rows.length, 8);
+  assert.equal(rows.filter(({ status }) => status === 'error').length, 1);
+  for (const row of rows.filter(({ status }) => status === 'ready')) {
+    assert.equal(row.data.metricId, row.metricId);
+    assert.equal(row.data.coverage.intern.expected, 1);
+    assert.deepEqual(row.data.series[0].points.map(({ month }) => month), [6]);
+  }
+  const denied = await loadDashboardMetrics(mock('restricted'), meta.metrics, { fromMonth: 1, toMonth: 6, internId: 'intern-01' });
+  assert(denied.every((row) => row.status === 'error' && row.error.status === 403));
+});
+
+test('пять дополнительных показателей доступны для всей программы и персонального среза', async () => {
+  const api = mock();
+  const meta = await api.meta();
+  const histories = new Set();
+  for (const metricId of ['quality', 'teamwork', 'initiative', 'learning', 'motivation']) {
+    assert(meta.metrics.some(({ id }) => id === metricId), `Нет показателя ${metricId}`);
+    const data = await api.metrics({ ...query, metricId });
+    assert.equal(data.status, 'ok');
+    assert.equal(data.comparison.status, 'available');
+    assert.equal(data.series[0].points.length, 6);
+    histories.add(JSON.stringify(data.series));
+    const personal = await api.metrics({ ...query, metricId, fromMonth: 6, internId: 'intern-01' });
+    assert.equal(personal.series[0].points.length, 1);
+    assert.equal(personal.coverage.intern.expected, 1);
+    assert.equal(personal.comparison.points[0].nPairs, 1);
+    const gap = await mock('gap').metrics({ ...query, metricId });
+    assert.equal(gap.series[0].points[3].value, null);
+    assert.equal((await mock('empty').metrics({ ...query, metricId })).status, 'empty');
+  }
+  assert.equal(histories.size, 5, 'У показателей должны быть разные истории');
+});
 
 test('охват и парное сравнение зависят от выбранных циклов и наставника', async () => {
   const api = mock();

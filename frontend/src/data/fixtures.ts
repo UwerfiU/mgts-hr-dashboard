@@ -29,6 +29,11 @@ export const demoMeta: Meta = {
     { id: 'autonomy', label: 'Самостоятельность', scales: { intern: { min: 0, max: 5, step: 1 }, mentor: { min: 0, max: 5, step: 1 } } },
     { id: 'clarity', label: 'Понимание задач', scales: { intern: { min: 1, max: 5, step: 1 }, mentor: { min: 1, max: 5, step: 1 } } },
     { id: 'workload', label: 'Нагрузка', scales: { intern: { min: 1, max: 5, step: 1 }, mentor: { min: 1, max: 10, step: 1 } } },
+    { id: 'quality', label: 'Качество работы', scales: { intern: { min: 1, max: 5, step: 1 }, mentor: { min: 1, max: 5, step: 1 } } },
+    { id: 'teamwork', label: 'Командное взаимодействие', scales: { intern: { min: 1, max: 5, step: 1 }, mentor: { min: 1, max: 5, step: 1 } } },
+    { id: 'initiative', label: 'Инициативность', scales: { intern: { min: 1, max: 5, step: 1 }, mentor: { min: 1, max: 5, step: 1 } } },
+    { id: 'learning', label: 'Освоение навыков', scales: { intern: { min: 1, max: 5, step: 1 }, mentor: { min: 1, max: 5, step: 1 } } },
+    { id: 'motivation', label: 'Мотивация', scales: { intern: { min: 1, max: 5, step: 1 }, mentor: { min: 1, max: 5, step: 1 } } },
   ],
   defaultMetricId: 'autonomy',
   roles: { intern: 'Стажёры', mentor: 'Наставники' },
@@ -73,6 +78,27 @@ export const demoScores: Record<string, ScoreFixture> = {
   workload: {
     intern: [[3, 2, 3, 3, 2], [3, 3, 3, 4, 3], [4, 3, 3, null, 3], [5, 4, 3, 5, 4], [4, 4, 4, 4, null], [4, 3, 3, 4, 3]],
     mentor: [[4, 4, 5, 4, null], [5, 4, 5, 5, null], [6, 6, 5, null, 5], [7, 7, 6, 8, 7], [6, 6, 6, 6, null], [5, 6, 5, 6, null]],
+  },
+  // Синтетические истории для проверки интерфейса, не утверждённые вопросы анкет.
+  quality: {
+    intern: [[3, 3, 2, 3, 3], [3, 3, 3, 4, 3], [4, 3, 3, null, 4], [4, 4, 3, 4, 4], [4, 5, 4, 4, null], [5, 5, 4, 5, 4]],
+    mentor: [[2, 2, 2, 3, null], [3, 2, 3, 3, null], [3, 3, 3, null, 3], [3, 4, 3, 4, 3], [4, 4, 4, 4, null], [4, 5, 4, 4, null]],
+  },
+  teamwork: {
+    intern: [[3, 4, 3, 3, 4], [4, 4, 3, 4, 4], [4, 4, 4, null, 4], [4, 4, 4, 4, 4], [5, 4, 5, 4, null], [5, 4, 5, 4, 5]],
+    mentor: [[3, 3, 3, 4, null], [4, 3, 4, 4, null], [4, 4, 4, null, 4], [4, 5, 4, 4, 4], [5, 5, 4, 4, null], [5, 5, 5, 4, null]],
+  },
+  initiative: {
+    intern: [[2, 2, 3, 2, 2], [2, 3, 3, 2, 3], [3, 3, 3, null, 3], [3, 4, 3, 3, 4], [4, 4, 4, 3, null], [4, 5, 4, 4, 4]],
+    mentor: [[1, 2, 2, 2, null], [2, 2, 2, 2, null], [2, 3, 2, null, 3], [3, 3, 3, 2, 3], [3, 4, 3, 3, null], [4, 4, 4, 3, null]],
+  },
+  learning: {
+    intern: [[2, 3, 2, 2, 3], [3, 3, 3, 3, 3], [4, 4, 3, null, 4], [4, 4, 4, 4, 4], [5, 4, 4, 5, null], [5, 5, 5, 4, 5]],
+    mentor: [[2, 2, 2, 2, null], [3, 3, 2, 3, null], [3, 4, 3, null, 3], [4, 4, 4, 3, 4], [4, 4, 5, 4, null], [5, 4, 5, 5, null]],
+  },
+  motivation: {
+    intern: [[5, 5, 4, 5, 4], [4, 4, 4, 5, 4], [4, 3, 4, null, 3], [3, 3, 2, 3, 3], [3, 4, 3, 3, null], [4, 3, 3, 4, 3]],
+    mentor: [[4, 4, 4, 4, null], [4, 4, 4, 4, null], [4, 4, 3, null, 4], [4, 3, 3, 4, 3], [4, 4, 3, 4, null], [4, 4, 4, 4, null]],
   },
 };
 

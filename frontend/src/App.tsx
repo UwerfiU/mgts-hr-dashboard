@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Popover } from '@base-ui/react/popover';
 import { Link, NavLink, Route, Routes, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import { createDataClient, isHttp } from './data/client.ts';
 import { demoScenarios } from './data/fixtures.ts';
@@ -11,27 +10,13 @@ import { FilterBar } from './components/filters.tsx';
 import type { FiltersValue } from './components/filters.tsx';
 import { ComparisonPanel, CoverageStrip, DistributionChart, ScoresTable, TrendChart } from './components/metrics.tsx';
 import { FeedbackSection } from './components/feedback.tsx';
-import { Loading, SectionTitle, SelectField, StatePanel } from './components/ui.tsx';
-
-type Theme = 'a' | 'b';
-
-function useTheme() {
-  const [theme, set] = useState<Theme>(() => {
-    try { return localStorage.getItem('mgts-ui') === 'a' ? 'a' : 'b'; }
-    catch { return 'b'; }
-  });
-  const setTheme = (value: Theme) => {
-    set(value);
-    try { localStorage.setItem('mgts-ui', value); } catch { /* The current theme still works. */ }
-  };
-  return [theme, setTheme] as const;
-}
+import { Loading, SectionTitle, StatePanel } from './components/ui.tsx';
+import { GlassEnabled } from './components/glass.tsx';
+import { OverviewDashboard } from './components/dashboard.tsx';
 
 export function App() {
-  const [search, setSearch] = useSearchParams();
+  const [search] = useSearchParams();
   const location = useLocation();
-  const [theme, setTheme] = useTheme();
-  const [demoOpen, setDemoOpen] = useState(false);
   const scenario = demoScenarios.find(({ id }) => id === search.get('demo'))?.id ?? 'normal';
   const client = useMemo(() => createDataClient(scenario), [scenario]);
   const loadMeta = useCallback((signal: AbortSignal) => client.meta(signal), [client]);
@@ -48,7 +33,8 @@ export function App() {
   }, [location.pathname]);
 
   return (
-    <div className="app" data-theme={theme}>
+    <GlassEnabled value={true}>
+    <div className="app" data-theme="b">
       <a className="skip-link" href="#main">К содержанию</a>
       <header className="topbar">
         <div className="topbar-inner">
@@ -61,26 +47,7 @@ export function App() {
             <NavLink to={{ pathname: '/feedback', search: location.search }}>Обратная связь</NavLink>
           </nav>
           <div className="topbar-tools">
-            {!isHttp ? (
-              <Popover.Root open={demoOpen} onOpenChange={setDemoOpen}>
-                <Popover.Trigger className="demo-badge">Демо</Popover.Trigger>
-                <Popover.Portal>
-                  <Popover.Positioner className="demo-positioner" align="end" sideOffset={12} collisionPadding={12}>
-                    <Popover.Popup className="demo-popup" aria-label="Настройки демо">
-                      <SelectField label="Сценарий демо" value={scenario} options={demoScenarios}
-                        onChange={(value) => {
-                          setDemoOpen(false);
-                          setSearch(value === 'normal' ? {} : { demo: value }, { replace: true });
-                        }} />
-                    </Popover.Popup>
-                  </Popover.Positioner>
-                </Popover.Portal>
-              </Popover.Root>
-            ) : meta?.dataMode === 'demo' && <span className="demo-badge">Демо</span>}
-            <div className="theme-switch" role="group" aria-label="Оформление">
-              <button type="button" aria-label="Вариант А" aria-pressed={theme === 'a'} onClick={() => setTheme('a')}>А</button>
-              <button type="button" aria-label="Вариант Б" aria-pressed={theme === 'b'} onClick={() => setTheme('b')}>Б</button>
-            </div>
+            {(!isHttp || meta?.dataMode === 'demo') && <span className="demo-badge">Демо</span>}
           </div>
         </div>
       </header>
@@ -99,6 +66,7 @@ export function App() {
         )}
       </main>
     </div>
+    </GlassEnabled>
   );
 }
 
@@ -113,7 +81,6 @@ function Workspace({ client, meta, search }: { client: DataClient; meta: Meta; s
   const reset = () => setValue(initial);
   const { fromMonth, toMonth, internId, mentorId, metricId, role, categoryId } = value;
   const slice = useMemo(() => ({ fromMonth, toMonth, internId, mentorId }), [fromMonth, toMonth, internId, mentorId]);
-  const metricsQuery = useMemo(() => ({ ...slice, metricId }), [slice, metricId]);
   const feedbackQuery = useMemo(() => ({ ...slice, role, categoryId }), [slice, role, categoryId]);
   const metric = meta.metrics.find(({ id }) => id === metricId)!;
 
@@ -123,7 +90,7 @@ function Workspace({ client, meta, search }: { client: DataClient; meta: Meta; s
         <div className="page-stack">
           <PageHeading meta={meta} slice={slice} title="Обзор программы" showSync />
           <FilterBar meta={meta} value={value} screen="overview" onChange={change} onReset={reset} />
-          <MetricsSection client={client} meta={meta} metric={metric} query={metricsQuery} onReset={reset} />
+          <OverviewDashboard client={client} meta={meta} metric={metric} slice={slice} onReset={reset} onSelect={(metricId) => change({metricId})} />
           <InternDirectory meta={meta} slice={slice} search={search} />
         </div>
       } />
