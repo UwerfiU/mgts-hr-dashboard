@@ -1,3 +1,4 @@
+import { toFeedback, toMeta, toMetrics } from './adapter.ts';
 import { ApiError } from './types.ts';
 import type { DataClient, FeedbackQuery, MetricsQuery } from './types.ts';
 
@@ -22,8 +23,8 @@ export function createHttpClient(baseUrl = '', transport: typeof fetch = fetch):
   }
 
   return {
-    meta: (signal) => get('meta', signal),
-    metrics: (query, signal) => get('metrics', signal, query),
-    feedback: (query, signal) => get('feedback', signal, query),
+    meta: async (signal) => toMeta(await get<Record<string, any>>('meta', signal)),
+    metrics: async (query, signal) => toMetrics(await get<Record<string, any>>('metrics', signal, query)),
+    feedback: async (query, signal) => toFeedback(await get<Record<string, any>>('feedback', signal, query)),
   };
 }
