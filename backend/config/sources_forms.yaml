@@ -15,7 +15,7 @@ forms:
     questionnaire: intern_v1
     cycle_field: TODO                    # ID вопроса-цикла в форме (или правило из текста/даты)
     about_intern_field: TODO             # поле, по которому определяется «о ком» (если есть)
-    submitted_at_field: createdTime      # встроенное поле Forms API
+    submitted_at_field: createTime       # встроенное поле Forms API
     question_map:                        # «ID вопроса в форме → внутренний ключ»
       # TODO_QUESTION_ID: skill_growth
       # TODO_QUESTION_ID: task_clarity
@@ -26,7 +26,7 @@ forms:
     questionnaire: mentor_v1
     cycle_field: TODO
     about_intern_field: TODO             # как в ответе наставника определить стажёра
-    submitted_at_field: createdTime
+    submitted_at_field: createTime
     question_map: {}                     # заполнить при WP4
 
 # OAuth (файл client secrets НЕ коммитится; путь задаётся в .env)

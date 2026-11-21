@@ -4,11 +4,18 @@
 своя form_id: source_key = formId+responseId, общие ID дали бы ложные «дубли».
 """
 import json
+import shutil
 import time
+from threading import Event
 
+import yaml
+from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from app.db.models import Submission, SyncState
+from app.config import settings
+from app.db.models import Mentor, Submission, SyncState
+from app.main import app
+from app.sources.forms_poller.client import FormsClient
 from app.sources.forms_poller.mock import MockFormsClient
 from app.sources.forms_poller.poller import FormsPoller, response_to_raw, spec_from_form_entry
 
@@ -45,6 +52,36 @@ def _poller(client, form_id: str) -> FormsPoller:
     return FormsPoller(client=client, entries=[_entry(form_id)], interval_seconds=1)
 
 
+def test_real_startup_imports_form_response_offline(catalog_db, tmp_path, monkeypatch):
+    fid = "F_REAL_STARTUP"
+    catalog = tmp_path / "catalog.yaml"
+    shutil.copyfile(settings.catalog_path, catalog)
+    (tmp_path / "sources_forms.yaml").write_text(
+        yaml.safe_dump({"forms": [_entry(fid)]}), encoding="utf-8",
+    )
+    token = tmp_path / "token.json"
+    token.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(settings, "data_mode", "real")
+    monkeypatch.setattr(settings, "catalog_path", str(catalog))
+    monkeypatch.setattr(settings, "google_token_cache", str(token))
+    monkeypatch.setattr(settings, "google_client_secrets_file", "")
+
+    requested = Event()
+
+    def offline_get(self, path, params):
+        requested.set()
+        assert path == f"/v1/forms/{fid}/responses"
+        return {"responses": [_resp(fid, "R1", [("Q_CYCLE", "2"), ("Q_SKILL", "4")])]}
+
+    monkeypatch.setattr(FormsClient, "_get", offline_get)
+    with TestClient(app):
+        assert requested.wait(timeout=5), "При запуске не началось чтение формы"
+
+    sub = catalog_db.scalars(select(Submission).where(Submission.source_key == f"{fid}:R1")).one()
+    assert sub.cycle == 2
+    assert [(a.question_key, a.score) for a in sub.answers] == [("skill_growth", 4.0)]
+
+
 def test_sync_stores_responses(catalog_db):
     fid = "F_SYNC"
     r1 = _resp(fid, "R1", [("Q_CYCLE", "2"), ("Q_WHO", "Стажёр Формы"), ("Q_SKILL", "4"), ("Q_COMMENT", "Хорошо")])
@@ -68,6 +105,31 @@ def test_sync_stores_responses(catalog_db):
 
     state = catalog_db.scalar(select(SyncState).where(SyncState.connector == f"form:{fid}"))
     assert state.last_success_at is not None and state.last_error is None
+
+
+def test_mentor_form_sets_author(catalog_db):
+    form_id = "F_MENTOR_AUTHOR"
+    entry = {
+        **_entry(form_id),
+        "role": "mentor",
+        "questionnaire": "mentor_v1",
+        "author_mentor_field": "Q_AUTHOR",
+        "question_map": {"Q_SKILL": "skill_growth_mentor"},
+    }
+    response = _resp(form_id, "R1", [
+        ("Q_CYCLE", "2"), ("Q_WHO", "Стажёр Forms"),
+        ("Q_AUTHOR", "Наставник Forms"), ("Q_SKILL", "4"),
+    ])
+    poller = FormsPoller(MockFormsClient({form_id: [[response]]}), [entry], interval_seconds=1)
+
+    assert poller.sync_once()[f"form:{form_id}"]["created"] == 1
+
+    mentor_alias = catalog_db.scalar(
+        select(Mentor.alias)
+        .join(Submission, Submission.author_mentor_id == Mentor.id)
+        .where(Submission.source_key == f"{form_id}:R1")
+    )
+    assert mentor_alias == "Наставник Forms"
 
 
 def test_resync_no_duplicates(catalog_db):

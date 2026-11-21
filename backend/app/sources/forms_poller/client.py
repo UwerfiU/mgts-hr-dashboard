@@ -14,12 +14,54 @@ demo сервис работает без них.
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 
 import httpx
 
 BASE_URL = "https://forms.googleapis.com"
 SCOPES = ["https://www.googleapis.com/auth/forms.responses.readonly"]
+
+
+def parse_response_time(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _answer_value(answer: dict) -> str:
+    """Текст ответа Forms API: answers[] внутри textAnswers (может быть несколько)."""
+    block = answer.get("textAnswers") or {}
+    values = [
+        str(item.get("value", ""))
+        for item in (block.get("answers") or [])
+        if isinstance(item, dict)
+    ]
+    return "; ".join(v for v in values if v.strip())
+
+
+def iter_answers(resp: dict):
+    """(questionId, value) из ответа Forms API.
+
+    Реальный формат: `answers` — объект {questionId: Answer}. Дополнительно
+    поддерживается список (старый мок/иная обёртка), чтобы не терять данные.
+    """
+    answers = resp.get("answers")
+    if isinstance(answers, dict):
+        for qid, answer in answers.items():
+            if not isinstance(answer, dict):
+                continue
+            yield str(answer.get("questionId") or qid), _answer_value(answer)
+    elif isinstance(answers, list):
+        for answer in answers:
+            if not isinstance(answer, dict):
+                continue
+            qid = answer.get("questionId") or (answer.get("question") or {}).get("questionId")
+            if qid:
+                yield str(qid), _answer_value(answer)
 
 
 class FormsClientError(RuntimeError):
