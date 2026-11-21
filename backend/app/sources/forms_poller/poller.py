@@ -10,57 +10,16 @@ import hashlib
 import json
 import logging
 import threading
-from datetime import datetime
 
 from ...db.database import SessionLocal
 from ...normalization.core import normalize_and_store
 from ...normalization.report import NormalizationReport
 from ...normalization.spec import SourceSpec
 from ...sources.base import RawRecord
+from .client import iter_answers, parse_response_time
 from .sync_state import set_sync_state
 
 logger = logging.getLogger("mgts.forms")
-
-
-def _parse_time(value: str | None) -> datetime | None:
-    if not value:
-        return None
-    try:
-        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-    except ValueError:
-        return None
-
-
-def _answer_value(answer: dict) -> str:
-    """Текст ответа Forms API: answers[] внутри textAnswers (может быть несколько)."""
-    block = answer.get("textAnswers") or {}
-    values = [
-        str(item.get("value", ""))
-        for item in (block.get("answers") or [])
-        if isinstance(item, dict)
-    ]
-    return "; ".join(v for v in values if v.strip())
-
-
-def _iter_answers(resp: dict):
-    """(questionId, value) из ответа Forms API.
-
-    Реальный формат: `answers` — объект {questionId: Answer}. Дополнительно
-    поддерживается список (старый мок/иная обёртка), чтобы не терять данные.
-    """
-    answers = resp.get("answers")
-    if isinstance(answers, dict):
-        for qid, answer in answers.items():
-            if not isinstance(answer, dict):
-                continue
-            yield str(answer.get("questionId") or qid), _answer_value(answer)
-    elif isinstance(answers, list):
-        for answer in answers:
-            if not isinstance(answer, dict):
-                continue
-            qid = answer.get("questionId") or (answer.get("question") or {}).get("questionId")
-            if qid:
-                yield str(qid), _answer_value(answer)
 
 
 def _fallback_response_id(resp: dict) -> str:
@@ -79,7 +38,8 @@ def response_to_raw(entry: dict, resp: dict) -> RawRecord:
 
     Синтетические поля payload (не из каталога):
       * "cycle"         — значение вопроса-цикла (entry["cycle_field"]);
-      * "about_intern"  — значение вопроса «о ком» (entry["about_intern_field"]).
+      * "about_intern"  — значение вопроса «о ком» (entry["about_intern_field"]);
+      * "author_mentor" — псевдоним автора (entry["author_mentor_field"]).
     """
     form_id = entry["form_id"]
     resp_id = str(resp.get("responseId") or "").strip()
@@ -92,16 +52,18 @@ def response_to_raw(entry: dict, resp: dict) -> RawRecord:
 
     qmap: dict[str, str] = entry.get("question_map") or {}
     payload: dict = {}
-    for qid, value in _iter_answers(resp):
+    for qid, value in iter_answers(resp):
         if qid == entry.get("cycle_field"):
             payload["cycle"] = value
         elif qid == entry.get("about_intern_field"):
             payload["about_intern"] = value
+        elif qid == entry.get("author_mentor_field"):
+            payload["author_mentor"] = value
         elif qid in qmap:
             payload[qmap[qid]] = value
 
     submitted_field = entry.get("submitted_at_field") or "createTime"
-    submitted_at = _parse_time(resp.get(submitted_field)) or _parse_time(resp.get("createTime"))
+    submitted_at = parse_response_time(resp.get(submitted_field)) or parse_response_time(resp.get("createTime"))
 
     return RawRecord(
         source="form",
@@ -121,6 +83,7 @@ def spec_from_form_entry(entry: dict) -> SourceSpec:
         cycle_field="cycle",
         field_map={k: k for k in qmap.values()},
         about_intern_field="about_intern" if entry.get("about_intern_field") else None,
+        author_mentor_field="author_mentor" if entry.get("author_mentor_field") else None,
     )
 
 

@@ -57,7 +57,7 @@ def _build_forms_poller():
         return None
 
     client = FormsClient(
-        client_secrets_file=settings.google_client_secrets_file,
+        client_secrets_path=settings.google_client_secrets_file,
         token_path=settings.google_token_cache,
     )
     interval = settings.sync_interval_sec or (cfg.get("sync") or {}).get("interval_seconds", 120)

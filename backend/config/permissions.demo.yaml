@@ -1,0 +1,16 @@
+# Права для ЛОКАЛЬНОГО ДЕМО (MGTS_DATA_MODE=demo, синтетические данные).
+# Подключается через MGTS_PERMISSIONS_PATH в backend/.env — файл по умолчанию
+# (config/permissions.yaml) не меняется: тесты опираются на его значения.
+#
+# Сюжет демо строится на персональных срезах («Демо Глеб», зазор самооценки
+# «Демо Веры»), поэтому здесь персональная история разрешена.
+
+personal_slices_allowed: true
+numeric_history_allowed: true
+text_display_allowed: false   # в demo-режиме тексты показаны автоматически (policy.texts_allowed)
+
+expected_per_cycle:
+  intern: 5
+  mentor: 5
+
+min_sample_for_insights: 3

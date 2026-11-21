@@ -1,0 +1,32 @@
+{
+  "name": "mgts-internships",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "test": "node --test tests/data.test.mjs"
+  },
+  "dependencies": {
+    "@base-ui/react": "1.9.0",
+    "@glass-sdk/liquid-glass": "0.0.2",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "react-router-dom": "7.18.4",
+    "recharts": "3.8.1"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.3",
+    "typescript": "5.9.3",
+    "vite": "8.3.8"
+  },
+  "overrides": {
+    "@modelcontextprotocol/server": "2.3.0"
+  }
+}
